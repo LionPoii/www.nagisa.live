@@ -1,0 +1,10 @@
+请在此目录中放置表情包图片文件（支持格式：jpg、jpeg、png、gif、webp）。
+
+可以通过后台管理界面 -> 表情与语音管理 -> 添加表情包上传图片文件。
+
+默认的表情包路径应为：
+/assets/expressions/happy.png
+/assets/expressions/angry.png
+/assets/expressions/confused.png
+
+如果这些默认文件不存在，网站会显示占位图片。 

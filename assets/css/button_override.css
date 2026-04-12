@@ -1,0 +1,16 @@
+/**
+ * 按钮文本样式覆盖
+ * 这个文件用于覆盖section1_left_button.css中的文本位置样式
+ */
+
+/* 文字样式覆盖 - 桌面版 */
+.section1-left-button-text {
+    transform: translate(15px, 5px) !important;
+    font-weight: bold !important;
+    font-size: 34px !important; /* 减小字体大小 */
+}
+
+/* 悬停时文字效果变化覆盖 - 桌面版 */
+.section1-left-button-container:hover .section1-left-button-text {
+    transform: translate(20px, 8px) !important;
+} 

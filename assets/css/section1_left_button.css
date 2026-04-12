@@ -1,0 +1,108 @@
+/**
+ * section1左侧按钮样式
+ * 用于创建带有条纹装饰的左侧按钮
+ */
+
+/* 自定义字体定义 */
+@font-face {
+    font-family: 'QiantuHouhei';
+    src: url('/assets/webfonts/QIANTUHOUHEI.TTF') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'KingHwaOldSongv3.0';
+    src: url('/assets/webfonts/KingHwaOldSongv3.0.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* 左侧按钮包装器样式 */
+.section1-left-button-wrapper {
+    position: absolute;
+    z-index: 10;
+    pointer-events: auto; /* 允许鼠标事件 */
+    transform: translateY(-50%);
+}
+
+/* 链接样式重置 */
+.section1-left-button-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+
+/* 左侧按钮容器样式 */
+.section1-left-button-container {
+    position: relative;
+    width: 180px;
+    height: 60px;
+    background-color: white;
+    border-radius: 0 30px 30px 0; /* 只有右侧是半圆形 */
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15), 
+                0 1px 3px rgba(0,0,0,0.08), 
+                inset 0 -2px 0 rgba(0,0,0,0.05), 
+                inset 1px 0 0 rgba(255,255,255,0.2); /* 多层阴影增强立体感 */
+    display: flex;
+    align-items: center; /* 确保垂直居中 */
+    justify-content: center; /* 确保水平居中 */
+    cursor: pointer;
+    transition: box-shadow 0.3s ease;
+    overflow: hidden;
+}
+
+/* SVG条纹样式 */
+.section1-left-button-stripes {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    shape-rendering: geometricPrecision; /* 提高SVG渲染质量 */
+    filter: drop-shadow(0px 1px 2px rgba(0,0,0,0.15)); /* 增强阴影效果 */
+}
+
+/* 条纹过渡效果 */
+.stripe-1, .stripe-2, .stripe-3 {
+    transition: d 0.5s ease;
+}
+
+/* 左侧按钮容器悬停效果 */
+.section1-left-button-container:hover {
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2), 
+                0 3px 6px rgba(0,0,0,0.1), 
+                inset 0 -2px 0 rgba(0,0,0,0.05), 
+                inset 1px 0 0 rgba(255,255,255,0.3); /* 悬停时增强阴影 */
+}
+
+/* 文字样式 */
+.section1-left-button-text {
+    font-family: 'KingHwaOldSongv3.0', 'QiantuHouhei', sans-serif;
+    font-size: 38px;
+    color: #4d4030;
+    z-index: 3;
+    position: relative;
+    font-weight: bold; /* 修改为加粗 */
+    letter-spacing: 6px;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    transform: translate(15px, 5px);
+    transition: color 0.5s ease, letter-spacing 0.5s ease, text-shadow 0.5s ease, transform 0.5s ease;
+}
+
+/* 悬停时文字效果变化 */
+.section1-left-button-container:hover .section1-left-button-text {
+    color: #cc9471; /* 变为温暖的橙棕色，与条纹2颜色协调 */
+    letter-spacing: 7px; /* 略微增加字间距，从6px增加到7px */
+    text-shadow: 1px 1px 3px rgba(204, 148, 113, 0.3); /* 添加带颜色的文字阴影 */
+    transform: translate(20px, 8px); /* 向右移动20px，向下移动8px */
+} 

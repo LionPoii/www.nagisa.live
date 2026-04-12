@@ -1,0 +1,68 @@
+/* 保留基础样式 */
+html, body {
+    margin: 0;
+    padding: 0;
+    background: #222;
+    overflow: hidden; 
+}
+
+/* 隐藏链接悬停时的URL预览 */
+a {
+    pointer-events: auto;
+}
+a[href] {
+    cursor: pointer;
+}
+a[href]:hover::after {
+    display: none !important;
+}
+
+.section-content {
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    padding: 60px 0;
+    text-align: center;
+}
+.fullscreen-section {
+    height: 100vh;
+    width: 100vw;
+    scroll-snap-align: start;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    position: relative;
+    transition: transform 0.5s ease-out;
+}
+.scroll-container {
+    height: 100vh;
+    width: 100vw;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
+}
+/* 隐藏滚动条 */
+.scroll-container::-webkit-scrollbar { display: none; }
+.scroll-container { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* 导航点样式 */
+.nav-dots {
+    position: fixed;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1000;
+}
+.nav-dot {
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    margin: 10px 0;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.nav-dot.active {
+    background: white;
+    transform: scale(1.2);
+} 

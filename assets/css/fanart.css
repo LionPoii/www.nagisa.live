@@ -1,0 +1,346 @@
+/* #线索墙样式 - 开始 */
+/* ==============================================
+ * 线索墙基础样式设置
+ * ============================================== */
+.cluewall-container * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* 线索墙容器 - 主容器样式设置 */
+.cluewall-container {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #333;
+    max-width: 580px; /* 进一步减少容器最大宽度 */
+    margin: 0;
+    padding: 10px; /* 统一内边距 */
+    position: relative;
+    /* 添加半透明白色背景 */
+    background-color: rgba(255, 255, 255, 0.4); /* 半透明白色 */
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    /* 添加flex布局使子元素可以居中 */
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* 垂直居中 */
+}
+
+.cluewall-header {
+    margin: 0 0 20px 0;
+}
+
+.cluewall-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: #333;
+    text-align: left;
+    margin: 0;
+    padding: 0 0 12px 0;
+    text-shadow: none;
+}
+
+/* 操作组统一样式 */
+.cluewall-controls {
+    position: absolute;
+    left: 20px; /* 确保在左侧 */
+    top: 60px; /* 在标题下方 */
+    width: 50px;
+    z-index: 30; /* 确保在最上层 */
+    display: flex;
+    justify-content: center;
+}
+
+/* 按钮统一样式 */
+.cluewall-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95); /* 提高不透明度 */
+    border: 1px solid rgba(0, 0, 0, 0.15); /* 加深边框 */
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2); /* 增强阴影 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    opacity: 0.9; /* 提高默认不透明度 */
+    cursor: pointer;
+}
+
+.cluewall-button:hover {
+    background: white;
+    opacity: 1;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.25);
+    transform: scale(1.1); /* 放大效果更明显 */
+}
+
+/* 加载更多按钮容器 */
+.cluewall-load-more-container {
+    display: flex;
+    justify-content: center;
+}
+
+/* 修改wrapper确保gallery在正确位置 */
+.cluewall-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-left: 45px; /* 减少左侧边距，向左移动 */
+    margin-top: 0; /* 移除负上边距 */
+    position: relative; /* 为绝对定位子元素提供定位上下文 */
+    width: calc(100% - 45px); /* 调整为与新的左侧边距匹配 */
+    /* 使wrapper自身在容器中居中 */
+    align-self: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.cluewall-gallery {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%; /* 让gallery占据wrapper的全部宽度 */
+    height: 80vh; /* 修改为视窗高度的80% */
+    margin: 0;
+    padding: 15px; /* 减少内边距 */
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    box-shadow: none;
+    overflow-y: auto !important; /* 强制使用auto */
+    overflow-x: hidden !important; /* 强制隐藏水平滚动条 */
+    scroll-behavior: smooth;
+    user-select: none;
+    cursor: default;
+    scrollbar-color: rgba(120,120,120,0.8) transparent !important; /* Firefox */
+    scrollbar-width: auto !important; /* Firefox - 改为auto而不是thin */
+}
+
+/* 自定义滚动条样式 */
+.cluewall-gallery::-webkit-scrollbar {
+    width: 16px !important; /* 进一步增加滚动条宽度 */
+    background: transparent !important;
+}
+
+.cluewall-gallery::-webkit-scrollbar-track {
+    background: rgba(220, 220, 220, 0.5) !important; /* 更明显的轨道 */
+    box-shadow: none !important;
+    border-radius: 8px;
+    margin: 2px 0; /* 调整上下边距 */
+}
+
+.cluewall-gallery::-webkit-scrollbar-thumb {
+    background: rgba(120, 120, 120, 0.8) !important; /* 更深的颜色 */
+    border-radius: 8px;
+    border: 2px solid rgba(240, 240, 240, 0.5) !important; /* 添加浅色边框 */
+    background-clip: padding-box; /* 背景只在内容区域显示 */
+    min-height: 60px !important; /* 增加最小高度 */
+}
+
+.cluewall-gallery::-webkit-scrollbar-thumb:hover {
+    background: rgba(80, 80, 80, 0.9) !important; /* 悬停时更深的颜色 */
+    border: 2px solid rgba(220, 220, 220, 0.8) !important; /* 悬停时更明显的边框 */
+}
+
+/* 滚动条按钮样式 */
+.cluewall-gallery::-webkit-scrollbar-button {
+    display: block !important;
+    height: 8px !important;
+    background-color: rgba(200, 200, 200, 0.6) !important;
+}
+
+.cluewall-gallery::-webkit-scrollbar-button:hover {
+    background-color: rgba(150, 150, 150, 0.8) !important;
+}
+
+/* 加载更多按钮样式 */
+.cluewall-load-more-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+/* 加载更多按钮禁用状态 */
+.cluewall-load-more-button:disabled {
+    opacity: 0.3 !important;
+    cursor: default !important;
+    pointer-events: none; /* 禁止鼠标事件 */
+    background-color: #f0f0f0 !important; /* 灰色背景 */
+    border: 1px solid #ccc !important; /* 灰色边框 */
+    box-shadow: none !important; /* 移除阴影 */
+    transform: none !important; /* 移除变换效果 */
+}
+
+.cluewall-load-more-button:disabled svg {
+    color: #999 !important; /* 图标颜色变灰 */
+}
+
+.cluewall-load-more-button span {
+    display: none; /* 隐藏文本 */
+}
+
+.cluewall-button svg {
+    color: #333;
+    width: 28px;
+    height: 28px;
+}
+
+.cluewall-bottom-buttons {
+    position: absolute;
+    left: 10px; /* 从左侧边缘添加少量内边距 */
+    bottom: 10px; /* 从底部边缘添加少量内边距 */
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    padding: 12px;
+    z-index: 1000;
+    margin: 0;
+    background-color: transparent; /* 保持透明背景 */
+    border-radius: 30px;
+    box-shadow: none;
+    border: none;
+}
+
+.cluewall-bottom-buttons .cluewall-button {
+    width: 50px;
+    height: 50px;
+    margin: 0;
+    opacity: 1;
+    background: white;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    border: 2px solid rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.cluewall-bottom-buttons .cluewall-button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+.cluewall-dynamic-card {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    background: white;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    border: 1px solid #f0f0f0;
+    user-select: none;
+    flex-shrink: 0;
+    margin: 12px;
+}
+
+.cluewall-dynamic-card:hover {
+    transform: translateX(5px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.cluewall-card-content {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.cluewall-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+}
+
+.cluewall-author-info {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+}
+
+.cluewall-author-name {
+    font-weight: 500;
+    color: #252525;
+    font-size: 15px;
+    margin: 0;
+    padding: 0;
+    text-shadow: none; /* 取消文本阴影 */
+}
+
+.cluewall-publish-time {
+    font-size: 15px;
+    color: #c0c0c0;
+    white-space: nowrap;
+    margin: 0;
+    padding: 0;
+    text-shadow: none; /* 取消文本阴影 */
+}
+
+.cluewall-dynamic-title {
+    display: block;
+    font-weight: bold;
+    text-align: left;
+    margin: 0;
+    padding: 0;
+    line-height: 1.1;
+    font-size: 14px;
+    color: #444;
+    text-shadow: none; /* 取消文本阴影 */
+}
+
+.cluewall-dynamic-text {
+    font-size: 14px;
+    color: #555;
+    line-height: 1.3;
+    overflow: hidden;
+    word-break: break-word;
+    white-space: pre-wrap;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    /* 移除行数限制，显示完整文本 */
+    display: block;
+    text-overflow: clip;
+    text-align: left;
+    text-shadow: none; /* 取消文本阴影 */
+}
+
+.cluewall-loading {
+    display: none;
+    justify-content: center;
+    margin: 20px 0;
+}
+
+.cluewall-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #00a1d6;
+    border-radius: 50%;
+    animation: cluewall-spin 1s linear infinite;
+}
+
+@keyframes cluewall-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 回到顶部按钮样式 */
+.cluewall-top-button {
+    opacity: 0.85;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.cluewall-top-button:hover {
+    opacity: 1;
+    transform: translateY(-3px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+/* #线索墙样式 - 结束 */ 

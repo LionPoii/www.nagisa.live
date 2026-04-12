@@ -1,0 +1,36 @@
+/* 首屏图片样式 */
+.splash-image {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+    background-image: url('../../elements/splash.png');
+    background-size: cover;
+    background-position: center;
+    opacity: 1;
+    transition: opacity 1.2s cubic-bezier(0.19, 1, 0.22, 1);
+    transform: scale(1);
+}
+.splash-hide {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* 首屏文本样式 */
+.splash-text {
+    animation: fadeInUp 0.8s ease-out;
+    z-index: 1001;
+}
+
+@keyframes fadeInUp {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, 30px);
+    }
+    100% {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
+} 

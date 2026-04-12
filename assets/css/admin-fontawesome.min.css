@@ -1,0 +1,66 @@
+/*!
+ * 管理后台精简版FontAwesome 5.15.4
+ * 仅包含管理界面所需图标
+ */
+@font-face{
+  font-family:"Font Awesome 5 Free";
+  font-style:normal;
+  font-weight:400;
+  font-display:block;
+  src:url(../webfonts/fa-regular-400.woff2) format("woff2"),
+      url(../webfonts/fa-regular-400.woff) format("woff"),
+      url(../webfonts/fa-regular-400.ttf) format("truetype")
+}
+
+@font-face{
+  font-family:"Font Awesome 5 Free";
+  font-style:normal;
+  font-weight:900;
+  font-display:block;
+  src:url(../webfonts/fa-solid-900.woff2) format("woff2"),
+      url(../webfonts/fa-solid-900.woff) format("woff"),
+      url(../webfonts/fa-solid-900.ttf) format("truetype")
+}
+
+@font-face{
+  font-family:"Font Awesome 5 Brands";
+  font-style:normal;
+  font-weight:400;
+  font-display:block;
+  src:url(../webfonts/fa-brands-400.woff2) format("woff2"),
+      url(../webfonts/fa-brands-400.woff) format("woff"),
+      url(../webfonts/fa-brands-400.ttf) format("truetype")
+}
+
+.fab{font-family:"Font Awesome 5 Brands";font-weight:400}
+.far{font-family:"Font Awesome 5 Free";font-weight:400}
+.fa,.fas{font-family:"Font Awesome 5 Free";font-weight:900}
+.fa,.fab,.far,.fas{-moz-osx-font-smoothing:grayscale;-webkit-font-smoothing:antialiased;display:inline-block;font-style:normal;font-variant:normal;text-rendering:auto;line-height:1}
+
+/* 管理界面所需的关键图标 - 实心图标 (fas) */
+.fa-arrow-left:before,.fas.fa-arrow-left:before{content:"\f060"}
+.fa-check-circle:before,.fas.fa-check-circle:before{content:"\f058"}
+.fa-edit:before,.fas.fa-edit:before{content:"\f044"}
+.fa-exclamation-circle:before,.fas.fa-exclamation-circle:before{content:"\f06a"}
+.fa-external-link-alt:before,.fas.fa-external-link-alt:before{content:"\f35d"}
+.fa-palette:before,.fas.fa-palette:before{content:"\f53f"}
+.fa-sign-out-alt:before,.fas.fa-sign-out-alt:before{content:"\f2f5"}
+.fa-users-cog:before,.fas.fa-users-cog:before{content:"\f509"}
+.fa-user-shield:before,.fas.fa-user-shield:before{content:"\f505"}
+.fa-th-large:before,.fas.fa-th-large:before{content:"\f009"}
+.fa-bullhorn:before,.fas.fa-bullhorn:before{content:"\f0a1"}
+.fa-comment-dots:before,.fas.fa-comment-dots:before{content:"\f4ad"}
+.fa-file-alt:before,.fas.fa-file-alt:before{content:"\f15c"}
+.fa-cloud-upload-alt:before,.fas.fa-cloud-upload-alt:before{content:"\f382"}
+.fa-server:before,.fas.fa-server:before{content:"\f233"}
+.fa-key:before,.fas.fa-key:before{content:"\f084"}
+.fa-trash:before,.fas.fa-trash:before{content:"\f1f8"}
+.fa-save:before,.fas.fa-save:before{content:"\f0c7"}
+.fa-user-plus:before,.fas.fa-user-plus:before{content:"\f234"}
+.fa-user-circle:before,.fas.fa-user-circle:before{content:"\f2bd"}
+.fa-users:before,.fas.fa-users:before{content:"\f0c0"}
+.fa-info-circle:before,.fas.fa-info-circle:before{content:"\f05a"}
+.fa-lock:before,.fas.fa-lock:before{content:"\f023"}
+
+/* 品牌图标 (fab) */
+.fa-bilibili:before,.fab.fa-bilibili:before{content:"\e3d9"} 

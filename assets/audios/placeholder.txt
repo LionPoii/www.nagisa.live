@@ -1,0 +1,10 @@
+请在此目录中放置音频文件（支持格式：mp3、wav、ogg）。
+
+可以通过后台管理界面 -> 表情与语音管理 -> 添加音频上传音频文件。
+
+默认的音频文件路径应为：
+/assets/audios/hello.mp3
+/assets/audios/thanks.mp3
+/assets/audios/goodbye.mp3
+
+如果这些默认文件不存在，网站会显示音频控件但无法播放。 
