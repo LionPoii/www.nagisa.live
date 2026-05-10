@@ -587,7 +587,7 @@ include 'admin_header.php';
                                             <span class="nagisa-badge nagisa-badge-primary" title="archive.nagisa.live /admin"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_AR_EDITOR); ?></span>
                                             <?php endif; ?>
                                             <?php if ($hasSo): ?>
-                                            <span class="nagisa-badge nagisa-badge-default" title="储备站点（并列）"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></span>
+                                            <span class="nagisa-badge nagisa-badge-default" title="songdata.nagisa.live 管理后台"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></span>
                                             <?php endif; ?>
                                         </div>
                                         <?php endif; ?>
@@ -681,7 +681,7 @@ include 'admin_header.php';
                                                 <span><span class="nagisa-badge nagisa-badge-primary"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_AR_EDITOR); ?></span><span class="text-gray-600 text-sm ml-1">archive.nagisa.live /admin</span></span>
                                                 <?php endif; ?>
                                                 <?php if ($cSo): ?>
-                                                <span><span class="nagisa-badge nagisa-badge-default"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></span><span class="text-gray-600 text-sm ml-1">储备站点</span></span>
+                                                <span><span class="nagisa-badge nagisa-badge-default"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></span><span class="text-gray-600 text-sm ml-1">songdata.nagisa.live 管理后台</span></span>
                                                 <?php endif; ?>
                                             </div>
                                             <?php endif; ?>
@@ -764,10 +764,10 @@ include 'admin_header.php';
                                 </label>
                                 <label class="flex items-center gap-2 cursor-pointer">
                                     <input type="checkbox" name="new_archive_so_editor" value="1" class="rounded border-gray-300 text-amber-600 focus:ring-amber-500">
-                                    <span class="text-sm text-gray-700"><code class="text-xs bg-gray-100 px-1 rounded"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></code> — 储备站点（与上并列，独立管理）</span>
+                                    <span class="text-sm text-gray-700"><code class="text-xs bg-gray-100 px-1 rounded"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></code> — songdata.nagisa.live 管理后台</span>
                                 </label>
                             </div>
-                            <small class="nagisa-form-hint">可同时勾选；与主站 I / II / III 权限独立。</small>
+                            <small class="nagisa-form-hint">可同时勾选；与主站 I / II / III 权限独立。指向 songdata.nagisa.live 管理后台。</small>
                         </div>
                         
                         <div class="flex justify-end pt-3">
@@ -859,7 +859,7 @@ include 'admin_header.php';
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" name="edit_archive_so_editor" value="1" class="rounded border-gray-300 text-amber-600 focus:ring-amber-500" <?php echo !empty($edit_account['archive_so_editor']) ? 'checked' : ''; ?>>
-              <span class="text-sm text-gray-700"><code class="text-xs bg-gray-100 px-1 rounded"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></code> — 储备站点（并列）</span>
+              <span class="text-sm text-gray-700"><code class="text-xs bg-gray-100 px-1 rounded"><?php echo htmlspecialchars(ARCHIVE_PERMISSION_SO_EDITOR); ?></code> — songdata.nagisa.live 管理后台</span>
             </label>
           </div>
           <small class="nagisa-form-hint">AI_REF: NAGISA_ADMINS_ARCHIVE_PERMISSION — 两列独立，可同时勾选。</small>

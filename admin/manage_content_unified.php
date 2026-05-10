@@ -2043,7 +2043,7 @@ function copyDynamicImage() {
     <?php endif; ?>
 }
 
-// 下载动态图片
+// 下载动态图片（仅下载到本地，不上传服务器）
 function downloadDynamicImage() {
     <?php if ($pinned_dynamic_image): ?>
     fetchPinnedScheduleImageBlob()
@@ -2059,17 +2059,6 @@ function downloadDynamicImage() {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
             showRightUpToast('图片已下载', 'success');
-
-            const formData = new FormData();
-            formData.append('image_url', PINNED_SCHEDULE_IMAGE_URL);
-            formData.append('file_name', fileName);
-            formData.append('action', 'save_schedule_image');
-
-            fetch('save_schedule_image.php', {
-                method: 'POST',
-                body: formData,
-                credentials: 'same-origin'
-            }).catch(function () { /* 静默：本地已下载成功 */ });
         })
         .catch(function () {
             showRightUpToast('下载失败，请稍后再试', 'error');
@@ -2077,54 +2066,55 @@ function downloadDynamicImage() {
     <?php endif; ?>
 }
 
-// 档案馆储存功能
+// 档案馆储存功能（保留图片原始格式，不强制转换为jpg）
 function saveToArchive() {
     <?php if ($pinned_dynamic_image): ?>
     try {
-        // 获取当前日期并格式化为YYYYMMDD
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        const dateStr = `${year}${month}${day}`;
-        const fileName = `Schedule_${dateStr}.jpg`;
-        
-        // 显示加载提示
-        showRightUpToast('正在保存到档案馆...', 'info');
-        
-        const formData = new FormData();
-        formData.append('image_url', PINNED_SCHEDULE_IMAGE_URL);
-        formData.append('file_name', fileName);
-        formData.append('action', 'save_schedule_image');
-        
-        fetch('save_schedule_image.php', {
-            method: 'POST',
-            body: formData,
-            credentials: 'same-origin'
-        })
-        .then(function (response) {
-            return response.text().then(function (text) {
-                var data;
-                try {
-                    data = JSON.parse(text);
-                } catch (e) {
-                    showRightUpToast('保存失败: 服务器返回异常（请检查 PHP 错误日志）', 'error');
-                    return;
-                }
-                if (!response.ok) {
-                    showRightUpToast('保存失败: ' + (data.message || ('HTTP ' + response.status)), 'error');
-                    return;
-                }
-                if (data.success) {
-                    showRightUpToast('已成功保存到档案馆', 'success');
-                } else {
-                    showRightUpToast('保存失败: ' + (data.message || '未知错误'), 'error');
-                }
+        // 通过 fetch 获取图片 Blob 以获取正确的 MIME 类型和扩展名
+        fetchPinnedScheduleImageBlob()
+            .then(function (blob) {
+                const ext = pinnedScheduleFileName(blob).replace(/^.*\./, ''); // 从 blob 推断扩展名
+                const today = new Date();
+                const y = today.getFullYear();
+                const m = String(today.getMonth() + 1).padStart(2, '0');
+                const d = String(today.getDate()).padStart(2, '0');
+                const fileName = 'Schedule_' + y + m + d + '.' + ext;
+
+                showRightUpToast('正在保存到档案馆...', 'info');
+
+                const formData = new FormData();
+                formData.append('image_url', PINNED_SCHEDULE_IMAGE_URL);
+                formData.append('file_name', fileName);
+                formData.append('action', 'save_schedule_image');
+
+                return fetch('save_schedule_image.php', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                }).then(function (response) {
+                    return response.text().then(function (text) {
+                        var data;
+                        try {
+                            data = JSON.parse(text);
+                        } catch (e) {
+                            showRightUpToast('保存失败: 服务器返回异常（请检查 PHP 错误日志）', 'error');
+                            return;
+                        }
+                        if (!response.ok) {
+                            showRightUpToast('保存失败: ' + (data.message || ('HTTP ' + response.status)), 'error');
+                            return;
+                        }
+                        if (data.success) {
+                            showRightUpToast('已成功保存到档案馆', 'success');
+                        } else {
+                            showRightUpToast('保存失败: ' + (data.message || '未知错误'), 'error');
+                        }
+                    });
+                });
+            })
+            .catch(function () {
+                showRightUpToast('保存失败: 网络异常', 'error');
             });
-        })
-        .catch(function () {
-            showRightUpToast('保存失败: 网络异常', 'error');
-        });
     } catch (error) {
         showRightUpToast('操作失败，请稍后再试', 'error');
     }

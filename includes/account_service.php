@@ -9,8 +9,8 @@
  * AI_REF: NAGISA_ADMINS_ARCHIVE_PERMISSION
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  * 数据库字段（并列、可叠加）:
- *   - admins.archive_ar_editor  TINYINT(1) — 对应界面「ar-editor」：archive.nagisa.live /admin（见 archive 站 admin/_auth.php）
- *   - admins.archive_so_editor  TINYINT(1) — 对应界面「so-editor」：储备/未来独立站点后台，与 ar 并列管理
+ *   - admins.archive_ar_editor  TINYINT(1) — archive.nagisa.live /admin（由 archive /admin/_auth.php 检查）
+ *   - admins.archive_so_editor  TINYINT(1) — songdata.nagisa.live /admin（由 songdata /admin/_auth.php 检查）
  *
  * 界面标签常量（仅用于文案 / badge，与库字段一一对应）:
  */
