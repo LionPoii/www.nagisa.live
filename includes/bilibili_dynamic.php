@@ -372,7 +372,7 @@ class BilibiliDynamic {
         if (isset($dynamic['modules']['module_dynamic']['major']['opus']['pics'])) {
             foreach ($dynamic['modules']['module_dynamic']['major']['opus']['pics'] as $pic) {
                 if (isset($pic['url'])) {
-                    $images[] = $pic['url'];
+                    $images[] = BilibiliRichText::normalizeMediaUrl($pic['url']);
                 }
             }
         }
@@ -381,7 +381,7 @@ class BilibiliDynamic {
         if (isset($dynamic['modules']['module_dynamic']['major']['draw']['pics'])) {
             foreach ($dynamic['modules']['module_dynamic']['major']['draw']['pics'] as $pic) {
                 if (isset($pic['url'])) {
-                    $images[] = $pic['url'];
+                    $images[] = BilibiliRichText::normalizeMediaUrl($pic['url']);
                 }
             }
         }
@@ -390,7 +390,7 @@ class BilibiliDynamic {
         if (isset($dynamic['modules']['module_dynamic']['major']['common']['cover'])) {
             $cover = $dynamic['modules']['module_dynamic']['major']['common']['cover'];
             if (isset($cover['src'])) {
-                $images[] = $cover['src'];
+                $images[] = BilibiliRichText::normalizeMediaUrl($cover['src']);
             }
         }
         
@@ -402,7 +402,7 @@ class BilibiliDynamic {
             $processed['video'] = [
                 'bvid' => $archive['bvid'] ?? '',
                 'title' => $archive['title'] ?? '',
-                'cover' => $archive['cover'] ?? '',
+                'cover' => BilibiliRichText::normalizeMediaUrl($archive['cover'] ?? ''),
                 'duration' => $archive['duration_text'] ?? '',
                 'view' => $archive['stat']['view'] ?? 0,
                 'danmaku' => $archive['stat']['danmaku'] ?? 0,
@@ -443,14 +443,18 @@ class BilibiliDynamic {
     private function extractImages($pics) {
         $images = [];
         foreach ($pics as $pic) {
+            $raw = null;
             if (isset($pic['url'])) {
-                $images[] = $pic['url'];
+                $raw = $pic['url'];
             } elseif (isset($pic['src'])) {
-                $images[] = $pic['src'];
+                $raw = $pic['src'];
             } elseif (isset($pic['image_src']['src'])) {
-                $images[] = $pic['image_src']['src'];
+                $raw = $pic['image_src']['src'];
             } elseif (isset($pic['image_src']['remote']['url'])) {
-                $images[] = $pic['image_src']['remote']['url'];
+                $raw = $pic['image_src']['remote']['url'];
+            }
+            if ($raw !== null) {
+                $images[] = BilibiliRichText::normalizeMediaUrl($raw);
             }
         }
         return $images;

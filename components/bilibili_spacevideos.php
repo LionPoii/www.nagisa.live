@@ -23,6 +23,8 @@ if (!$show_spacevideos) {
     return;
 }
 
+require_once __DIR__ . '/../includes/bilibili_rich_text.php';
+
 // 从API获取数据
 $ch = curl_init();
 $base_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]";
@@ -235,7 +237,7 @@ if (!empty($current_uid)) {
       <?php foreach($space_videos as $video): ?>
         <div class="spacevideos-card" onclick="window.open('https://www.bilibili.com/video/<?php echo htmlspecialchars($video['bvid']); ?>', '_blank')">
           <div class="spacevideos-cover-container">
-            <img class="spacevideos-cover" src="<?php echo htmlspecialchars(strpos($video['pic'], '//') === 0 ? 'https:' . $video['pic'] : $video['pic']); ?>" alt="cover" referrerpolicy="no-referrer">
+            <img class="spacevideos-cover" src="<?php echo htmlspecialchars(BilibiliRichText::normalizeMediaUrl($video['pic'] ?? '')); ?>" alt="cover" referrerpolicy="no-referrer">
           </div>
           <div class="spacevideos-title">
             <?php echo htmlspecialchars($video['title']); ?><!--  -->

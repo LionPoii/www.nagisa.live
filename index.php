@@ -661,7 +661,6 @@ $style = array_merge($default_style, $style);
         <?php require_once 'components/footer.php'; ?>
 
         <script src="assets/js/splash.js"></script>
-        <script src="assets/fanart/cluewall.js"></script>
         <script>
             // 全局变量
             window.currentSection = 0;

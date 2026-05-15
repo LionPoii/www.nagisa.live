@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // localStorage错误处理
     }
     
-    let lastLiveStatus = false;
+    let lastLiveStatus = null;
     
     // 添加点击事件
     notificationToggle.addEventListener('click', function() {
@@ -191,8 +191,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // 立即检查一次
         checkForUpdates();
         
-        // 设置定期检查（每30秒检查一次）
-        notificationCheckInterval = setInterval(checkForUpdates, 30000);
+        // 设置定期检查（每1秒检查一次）
+        notificationCheckInterval = setInterval(checkForUpdates, 1000);
     }
     
     // 停止检查更新
@@ -203,19 +203,42 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // 检查动态和直播状态
+    // 检查动态更新（直播状态由 bilibili_live_status 轮询并通过 liveStatusChanged 事件通知）
     function checkForUpdates() {
-        // 如果通知权限不是已授予，不进行检查
         if (Notification.permission !== 'granted') {
             return;
         }
-        
-        // 检查动态更新
         checkDynamicUpdates();
-        
-        // 检查直播状态
-        checkLiveStatus();
     }
+    
+    // 监听直播状态变化，仅在开播时弹出系统通知
+    function handleLiveStatusNotification(event) {
+        if (Notification.permission !== 'granted') {
+            return;
+        }
+        const data = event.detail;
+        if (!data || typeof data.is_living === 'undefined') {
+            return;
+        }
+        
+        if (lastLiveStatus === null) {
+            lastLiveStatus = data.is_living;
+            return;
+        }
+        
+        if (data.is_living && !lastLiveStatus) {
+            playIconAnimation('live');
+            showNotification('直播开始', data.title || '直播已开始', 'live', {
+                url: 'https://live.bilibili.com/' + data.room_id,
+                image: data.cover_url || null,
+                target: '_blank'
+            });
+        }
+        
+        lastLiveStatus = data.is_living;
+    }
+    
+    document.addEventListener('liveStatusChanged', handleLiveStatusNotification);
     
     // 播放图标动画效果
     function playIconAnimation(type) {
@@ -298,61 +321,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 // 处理错误
             });
     }
-    
-    // Fanart检测功能已移除
-    
-    // 检查直播状态
-    function checkLiveStatus() {
-        fetch('https://www.nagisa.live/api/check_live_status.php?_=' + new Date().getTime())
-            .then(response => {
-                return response.json();
-            })
-            .then(data => {
-                if (data && typeof data.is_living !== 'undefined') {
-                    // 如果是首次检查，只记录状态不显示通知
-                    if (lastLiveStatus === null) {
-                        lastLiveStatus = data.is_living;
-                    } 
-                    // 如果直播状态从离线变为在线，播放图标动画和显示系统弹窗通知
-                    else if (data.is_living && !lastLiveStatus) {
-                        // 播放图标动画
-                        playIconAnimation('live');
-                        
-                        // 同时显示系统弹窗通知
-                        showNotification('直播开始', data.title || '直播已开始', 'live', {
-                            url: 'https://live.bilibili.com/' + data.room_id,
-                            image: data.cover_url || null, // 只设置大图，显示完整封面
-                            target: '_blank' // 在新标签页中打开
-                        });
-                        
-                        lastLiveStatus = data.is_living;
-                    } else if (!data.is_living && lastLiveStatus) {
-                        lastLiveStatus = data.is_living;
-                    }
-                    
-                    // 触发自定义事件，通知直播状态组件
-                    const event = new CustomEvent('liveStatusChanged', { 
-                        detail: { 
-                            is_living: data.is_living,
-                            title: data.title,
-                            room_id: data.room_id
-                        } 
-                    });
-                    document.dispatchEvent(event);
-                    
-                    // 如果存在直播状态组件的更新函数，直接调用
-                    if (typeof window.updateLiveStatusUI === 'function') {
-                        window.updateLiveStatusUI(data.is_living);
-                    }
-                }
-            })
-            .catch(error => {
-                // 处理错误
-            });
-    }
-    
-    // 暴露方法给全局，以便直播状态组件可以检查是否存在
-    window.checkLiveStatus = checkLiveStatus;
     
     // 存储已显示通知的ID，防止重复显示
     let shownNotifications = {};
@@ -477,10 +445,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.close();
             };
             
-            // 30秒后自动关闭通知
+            // 15秒后自动关闭通知
             setTimeout(function() {
                 notification.close();
-            }, 30000);
+            }, 15000);
         } catch (error) {
             // 忽略错误
         }

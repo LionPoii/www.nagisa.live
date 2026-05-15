@@ -50,11 +50,7 @@ $dynamics = $biliDynamic->getProcessedDynamics($mid, $page, $limit, $force_refre
 
 // 代理图片处理函数
 function proxyBiliImage($url) {
-    if (!$url) return '';
-    if (strpos($url, '//') === 0) {
-        return 'https:' . $url;
-    }
-    return $url;
+    return BilibiliRichText::normalizeMediaUrl($url);
 }
 
 // 处理所有动态中的图片URL

@@ -9,7 +9,7 @@ class BilibiliLive {
     private $apiUrl;
     private $cacheFile;
     private $logFile;
-    private $cacheTime = 60; // 缓存时间（秒）
+    private $cacheTime = 15; // 缓存时间（秒）
 
     /**
      * 构造函数

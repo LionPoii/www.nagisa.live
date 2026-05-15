@@ -1,4 +1,13 @@
 <?php
+/**
+ * 直播状态 API（精简版）
+ *
+ * GET /api/check_live_status.php
+ * 文档：同目录 check_live_status.md
+ *
+ * 成功：{ success, room_id, is_living, title, cover_url, timestamp }
+ * 失败：{ success: false, error, message, timestamp }
+ */
 // 设置安全响应头
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');

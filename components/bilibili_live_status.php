@@ -490,22 +490,13 @@ function setupLiveStatusChecker() {
         title: <?php echo json_encode($title); ?>
     };
     
-    // 检测间隔（毫秒）- 每30秒检查一次
-    const checkInterval = 30000;
-    
-    // 检查是否存在通知组件
-    const hasNotificationComponent = typeof window.checkLiveStatus === 'function';
+    // 检测间隔（毫秒）- 每1秒检查一次（与通知权限无关，始终更新 UI）
+    const checkInterval = 1000;
     
     /**
      * 检查直播状态
      */
     function checkLiveStatus() {
-        // 如果存在通知组件的直播检测功能，则不重复请求
-        if (hasNotificationComponent) {
-            // 使用自定义事件监听通知组件的直播状态更新
-            return;
-        }
-        
         // 创建一个新的XMLHttpRequest对象
         const xhr = new XMLHttpRequest();
         
@@ -592,20 +583,6 @@ function setupLiveStatusChecker() {
         }
     }
     
-    // 监听通知组件触发的直播状态变化事件
-    document.addEventListener('liveStatusChanged', function(event) {
-        if (event.detail && typeof event.detail.is_living !== 'undefined') {
-            // 更新当前状态
-            currentStatus = {
-                is_living: event.detail.is_living,
-                title: event.detail.title
-            };
-            
-            // 更新UI
-            updateLiveStatusUI(event.detail.is_living);
-        }
-    });
-    
     // 暴露方法给全局，以便其他组件可以调用
     window.updateLiveStatusUI = updateLiveStatusUI;
     
@@ -615,12 +592,11 @@ function setupLiveStatusChecker() {
     // 页面可见性变化时检查
     document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
-            // 页面变为可见时立即检查
             checkLiveStatus();
         }
     });
     
-    // 初次加载后延迟检查（避免与页面加载冲突）
-    setTimeout(checkLiveStatus, 5000);
+    // 初次加载立即检查一次
+    checkLiveStatus();
 }
 </script> 

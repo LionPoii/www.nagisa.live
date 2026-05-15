@@ -468,8 +468,12 @@
         }
     }
 
-    // 初始加载
-    document.addEventListener('DOMContentLoaded', loadData);
+    // 初始加载（仅在 dynamicGallery 存在时，避免与 fanart_enhanced 冲突）
+    document.addEventListener('DOMContentLoaded', function() {
+        if (document.getElementById('dynamicGallery')) {
+            loadData();
+        }
+    });
     
     // 记录当前已加载的条目数
     let loadedItemsCount = 0;
@@ -756,10 +760,10 @@
 
     // 初始化按钮和滚动功能
     document.addEventListener('DOMContentLoaded', function() {
-        console.log('线索墙初始化开始...');
-        
-        // 重新获取gallery元素
         gallery = document.getElementById('dynamicGallery');
+        if (!gallery) return;
+
+        console.log('线索墙初始化开始...');
         
         // 设置gallery的overflow属性，确保滚动条正常工作
         if (gallery) {

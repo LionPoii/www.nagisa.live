@@ -4,9 +4,9 @@
  */
 class BilibiliRichText {
     /**
-     * 规范化表情资源 URL（协议相对补全为 https）
+     * 规范化 B 站媒体 URL（协议相对 / http 统一为 https）
      */
-    public static function normalizeEmojiMediaUrl($url) {
+    public static function normalizeMediaUrl($url) {
         if (!is_string($url)) {
             return '';
         }
@@ -16,8 +16,15 @@ class BilibiliRichText {
         }
         if (strpos($url, '//') === 0) {
             $url = 'https:' . $url;
+        } elseif (strpos($url, 'http://') === 0) {
+            $url = 'https://' . substr($url, 7);
         }
         return $url;
+    }
+
+    /** @deprecated 使用 normalizeMediaUrl */
+    public static function normalizeEmojiMediaUrl($url) {
+        return self::normalizeMediaUrl($url);
     }
 
     /**
