@@ -191,8 +191,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // 立即检查一次
         checkForUpdates();
         
-        // 设置定期检查（每1秒检查一次）
-        notificationCheckInterval = setInterval(checkForUpdates, 1000);
+        // 设置定期检查（每2秒检查一次）
+        notificationCheckInterval = setInterval(checkForUpdates, 2000);
     }
     
     // 停止检查更新

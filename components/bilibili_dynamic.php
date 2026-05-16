@@ -112,19 +112,6 @@ $max_retries = 3;
 $retry_count = 0;
 $dynamics = [];
 
-// 如果是强制刷新请求，清除可能的API缓存
-if ($force_refresh) {
-    // 尝试清除缓存目录中的文件
-    $cache_dir = __DIR__ . '/../api/api_cache/dynamic_api/';
-    if (is_dir($cache_dir)) {
-        $files = glob($cache_dir . "dynamic_api_mid{$mid}_p1_*.json");
-        foreach ($files as $file) {
-            @unlink($file);
-        }
-        file_put_contents($log_file, "{$component_load_time} - 已清除API缓存\n", FILE_APPEND);
-    }
-}
-
 while ($retry_count < $max_retries && empty($dynamics)) {
     if ($retry_count > 0) {
         sleep(1); // 延迟1秒后重试

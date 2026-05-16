@@ -43,15 +43,6 @@ try {
     // 记录请求时间戳
     $timestamp = isset($_GET['t']) ? $_GET['t'] : time();
     
-    // 清除可能的API缓存文件
-    $cache_dir = __DIR__ . '/../api/api_cache/dynamic_api/';
-    if (is_dir($cache_dir)) {
-        $files = glob($cache_dir . "dynamic_api_mid{$mid}_p1_*.json");
-        foreach ($files as $file) {
-            @unlink($file);
-        }
-    }
-    
     $biliDynamic = new BilibiliDynamic();
     // 获取更多动态，以便找到非置顶的最新动态
     $dynamics = $biliDynamic->getProcessedDynamics($mid, 1, 10, true); // 强制刷新获取最新的10条动态

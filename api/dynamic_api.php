@@ -47,6 +47,22 @@ function cache_api_data($action, $data) {
     $action_base = preg_replace('/_\d+_page_\d+$/', '', $action); // 处理类似get_dynamics_{mid}_page_{page}格式
     $action_base = preg_replace('/_[0-9a-f]{32}$/', '', $action_base); // 处理类似error_{md5}格式
     
+    // 数据未变化时仅刷新已有缓存文件的修改时间，不生成新文件
+    $pattern = $cache_dir . '/' . $action_base . '*' . '.json';
+    $existing_files = glob($pattern);
+    if (!empty($existing_files)) {
+        usort($existing_files, function($a, $b) {
+            return filemtime($b) - filemtime($a);
+        });
+        $latest = $existing_files[0];
+        $existing_data = json_decode(file_get_contents($latest), true);
+        if (json_encode($existing_data) === json_encode($data)) {
+            touch($latest);
+            log_api_call('cache_touch', ['file' => basename($latest), 'action' => $action]);
+            return $latest;
+        }
+    }
+    
     $cache_file = $cache_dir . '/' . $action . '_' . date('Y-m-d_H-i-s') . '.json';
     file_put_contents($cache_file, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     

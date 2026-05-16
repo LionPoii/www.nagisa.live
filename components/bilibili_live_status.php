@@ -490,8 +490,8 @@ function setupLiveStatusChecker() {
         title: <?php echo json_encode($title); ?>
     };
     
-    // 检测间隔（毫秒）- 每1秒检查一次（与通知权限无关，始终更新 UI）
-    const checkInterval = 1000;
+    // 检测间隔（毫秒）- 每2秒检查一次（与通知权限无关，始终更新 UI）
+    const checkInterval = 2000;
     
     /**
      * 检查直播状态

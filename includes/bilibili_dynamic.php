@@ -18,23 +18,15 @@ class BilibiliDynamic {
      */
     public function __construct() {
         $this->headers = [
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Referer: https://space.bilibili.com/',
+            'Origin: https://space.bilibili.com',
             'Accept: application/json, text/plain, */*',
             'Connection: keep-alive',
-            'Accept-Language: zh-CN,zh;q=0.9'
+            'Accept-Language: zh-CN,zh;q=0.9,en;q=0.8'
         ];
         
-        // 默认缓存时间设置为很短
-        $this->cache_time = 10; // 缓存10秒，确保能及时获取新动态
-        
-        // 检查是否有强制刷新参数
-        if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1' || 
-            isset($_GET['t']) || // API请求中包含时间戳参数
-            isset($_GET['force']) // 强制刷新参数
-        ) {
-            $this->cache_time = 0; // 强制刷新缓存
-        }
+        $this->cache_time = 10;
         
         // 设置API日志目录
         $this->log_dir = __DIR__ . '/../logs';
@@ -106,6 +98,108 @@ class BilibiliDynamic {
     }
     
     /**
+     * 设置请求头（Cookie、Referer）
+     *
+     * @param int $mid 用户ID
+     * @return void
+     */
+    private function applyRequestHeaders($mid) {
+        $headers = [
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer: https://space.bilibili.com/' . $mid . '/dynamic',
+            'Origin: https://space.bilibili.com',
+            'Accept: application/json, text/plain, */*',
+            'Connection: keep-alive',
+            'Accept-Language: zh-CN,zh;q=0.9,en;q=0.8'
+        ];
+        
+        $cookie = null;
+        if (isset($_SERVER['HTTP_X_BILICOOKIE']) && $_SERVER['HTTP_X_BILICOOKIE']) {
+            $cookie = $_SERVER['HTTP_X_BILICOOKIE'];
+        } else {
+            $cookie = $this->getBilibiliCookie();
+        }
+        
+        if (!empty($cookie)) {
+            $headers[] = 'Cookie: ' . $cookie;
+        }
+        
+        $this->headers = $headers;
+    }
+    
+    /**
+     * 校验动态 API 响应是否有效
+     *
+     * @param array|null $result API 响应
+     * @return bool
+     */
+    private function isValidDynamicResponse($result) {
+        return is_array($result)
+            && isset($result['code'])
+            && $result['code'] === 0
+            && isset($result['data']['items'])
+            && is_array($result['data']['items']);
+    }
+    
+    /**
+     * 通过 feed/all 接口获取用户动态（feed/space 已被风控拦截）
+     *
+     * @param int $mid 用户ID
+     * @param int $page 页码
+     * @param int $page_size 每页大小
+     * @return array|null
+     */
+    private function fetchFeedAllPage($mid, $page, $page_size) {
+        $api_url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all';
+        $offset = '';
+        $current_page = 1;
+        $result = null;
+        
+        while ($current_page <= $page) {
+            $params = [
+                'host_mid' => $mid,
+                'offset' => $offset,
+                'page' => $current_page,
+                'features' => 'itemOpusStyle',
+                'timezone_offset' => -480,
+            ];
+            
+            if ($page_size > 0) {
+                $params['page_size'] = min($page_size, 30);
+            }
+            
+            $this->applyRequestHeaders($mid);
+            $result = $this->httpGet($api_url, $params);
+            
+            if (!$this->isValidDynamicResponse($result)) {
+                return null;
+            }
+            
+            if ($current_page === $page) {
+                break;
+            }
+            
+            if (empty($result['data']['has_more'])) {
+                return null;
+            }
+            
+            $offset = $result['data']['offset'] ?? '';
+            $current_page++;
+        }
+        
+        if ($page_size > 0 && !empty($result['data']['items'])) {
+            $result['data']['items'] = array_slice($result['data']['items'], 0, $page_size);
+        }
+        
+        $item_count = count($result['data']['items']);
+        $result['data']['page'] = [
+            'total' => empty($result['data']['has_more']) ? $item_count : max($item_count, $page * $page_size)
+        ];
+        
+        return $result;
+    }
+    
+    /**
      * 记录日志
      * 
      * @param string $message 日志消息
@@ -115,6 +209,48 @@ class BilibiliDynamic {
      */
     private function logApiCall($message, $mid, $page) {
         // 日志功能已禁用
+    }
+    
+    /**
+     * 获取指定用户/页码的最新缓存文件路径
+     *
+     * @param int $mid 用户ID
+     * @param int $page 页码
+     * @return string|null
+     */
+    private function getLatestCacheFile($mid, $page) {
+        $save_dir = __DIR__ . '/../api/api_cache/dynamic_api/';
+        $files = glob($save_dir . "dynamic_api_mid{$mid}_p{$page}_*.json");
+        if (empty($files)) {
+            return null;
+        }
+        
+        usort($files, function($a, $b) {
+            return filemtime($b) - filemtime($a);
+        });
+        
+        return $files[0];
+    }
+    
+    /**
+     * 提取动态数据的对比指纹（ID + 发布时间）
+     *
+     * @param array|null $data API 响应数据
+     * @return string
+     */
+    private function getDynamicDataFingerprint($data) {
+        if (empty($data['data']['items']) || !is_array($data['data']['items'])) {
+            return '';
+        }
+        
+        $parts = [];
+        foreach ($data['data']['items'] as $item) {
+            $parts[] = ($item['id_str'] ?? '')
+                . ':'
+                . ($item['modules']['module_author']['pub_ts'] ?? 0);
+        }
+        
+        return md5(implode('|', $parts));
     }
     
     /**
@@ -128,33 +264,34 @@ class BilibiliDynamic {
     private function saveApiResponse($data, $mid, $page) {
         if (empty($data)) return;
         
-        // 更新为新的缓存位置
         $save_dir = __DIR__ . '/../api/api_cache/dynamic_api/';
         if (!is_dir($save_dir)) {
             @mkdir($save_dir, 0777, true);
         }
         
-        // 检查目录是否可写
         if (!is_writable($save_dir)) {
-            return; // 如果目录不可写，放弃保存
+            return;
         }
         
-        // 获取当前时间
+        $latest_file = $this->getLatestCacheFile($mid, $page);
+        if ($latest_file && file_exists($latest_file)) {
+            $existing = json_decode(file_get_contents($latest_file), true);
+            if ($this->getDynamicDataFingerprint($existing) === $this->getDynamicDataFingerprint($data)) {
+                @touch($latest_file);
+                return;
+            }
+        }
+        
         $current_time = date('Y-m-d_H-i-s');
-        // 格式化文件名
         $filename = $save_dir . "dynamic_api_mid{$mid}_p{$page}_" . $current_time . '.json';
         @file_put_contents($filename, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
         
         try {
-            // 清理旧文件，只保留最新的1个文件
             $files = glob($save_dir . "dynamic_api_mid{$mid}_p{$page}_*.json");
-            
-            // 按修改时间排序
             usort($files, function($a, $b) {
                 return filemtime($b) - filemtime($a);
             });
             
-            // 保留第一个(最新的)文件，删除其余文件
             if (count($files) > 1) {
                 for ($i = 1; $i < count($files); $i++) {
                     if (file_exists($files[$i])) {
@@ -177,98 +314,41 @@ class BilibiliDynamic {
      * @return array|null 动态列表数据
      */
     public function getUserDynamics($mid, $page = 1, $page_size = 30, $force_refresh = false) {
-        // 构建请求参数
-        $params = [
-            'host_mid' => $mid,
-            'page_num' => $page,
-            'page_size' => $page_size,
-            'timezone_offset' => -480, // 东八区
-            'features' => 'itemOpusStyle',
-            'version' => '5.73'
-        ];
-        
-        // API URL
-        $api_url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space";
-        
-        // 检查是否有现有最新数据
-        $save_dir = __DIR__ . '/../api/api_cache/dynamic_api/';
-        $files = glob($save_dir . "dynamic_api_mid{$mid}_p{$page}_*.json");
         $expired_cache = null;
+        $latest_file = $this->getLatestCacheFile($mid, $page);
         
-        // 如果强制刷新，则不使用缓存
-        if (!$force_refresh) {
-            // 按修改时间排序
-            if (!empty($files)) {
-                usort($files, function($a, $b) {
-                    return filemtime($b) - filemtime($a);
-                });
-                
-                // 检查最新的文件是否在缓存时间内
-                if (file_exists($files[0])) {
-                    if (time() - filemtime($files[0]) <= $this->cache_time) {
-                        $this->logApiCall("[CACHE HIT]", $mid, $page);
-                        return json_decode(file_get_contents($files[0]), true);
-                    } else {
-                        $this->logApiCall("[CACHE EXPIRED]", $mid, $page);
-                        $expired_cache = json_decode(file_get_contents($files[0]), true);
-                    }
+        if ($latest_file && file_exists($latest_file)) {
+            $cached = json_decode(file_get_contents($latest_file), true);
+            
+            if ($this->isValidDynamicResponse($cached)) {
+                if (!$force_refresh && (time() - filemtime($latest_file)) <= $this->cache_time) {
+                    $this->logApiCall("[CACHE HIT]", $mid, $page);
+                    return $cached;
                 }
-            } else {
-                $this->logApiCall("[CACHE MISS]", $mid, $page);
+                
+                $expired_cache = $cached;
+                $this->logApiCall($force_refresh ? "[FORCE REFRESH]" : "[CACHE EXPIRED]", $mid, $page);
             }
         } else {
-            $this->logApiCall("[FORCE REFRESH] Skipping cache", $mid, $page);
+            $this->logApiCall("[CACHE MISS]", $mid, $page);
         }
         
-        // 尝试从API获取数据
+        // 尝试从API获取数据（使用 feed/all，feed/space 会触发 412 风控）
         try {
-            // 获取数据库中的Cookie
-            $cookie = $this->getBilibiliCookie();
+            $result = $this->fetchFeedAllPage($mid, $page, $page_size);
             
-            // 如果有Cookie，添加到请求头中
-            if (!empty($cookie)) {
-                // 移除旧的Cookie头（如果存在）
-                foreach ($this->headers as $key => $header) {
-                    if (strpos($header, 'Cookie:') === 0) {
-                        unset($this->headers[$key]);
-                    }
-                }
-                // 添加新的Cookie头
-                $this->headers[] = 'Cookie: ' . $cookie;
-                $this->logApiCall("[USING COOKIE]", $mid, $page);
-            }
-            
-            // 支持通过header传cookie（优先级更高）
-            if (isset($_SERVER['HTTP_X_BILICOOKIE']) && $_SERVER['HTTP_X_BILICOOKIE']) {
-                foreach ($this->headers as $key => $header) {
-                    if (strpos($header, 'Cookie:') === 0) {
-                        unset($this->headers[$key]);
-                    }
-                }
-                $this->headers[] = 'Cookie: ' . $_SERVER['HTTP_X_BILICOOKIE'];
-                $this->logApiCall("[USING HEADER COOKIE]", $mid, $page);
-            }
-            
-            // 发送请求
-            $result = $this->httpGet($api_url, $params);
-            
-            // 记录API返回
             $this->logApiCall("[API RESP] CODE:" . ($result['code'] ?? 'unknown'), $mid, $page);
             
-            // 处理API返回结果
+            if ($this->isValidDynamicResponse($result)) {
+                $this->saveApiResponse($result, $mid, $page);
+                $this->logApiCall("[CACHE WRITE]", $mid, $page);
+                return $result;
+            }
+            
             if (is_array($result) && isset($result['code'])) {
-                if ($result['code'] === 0) {
-                    // API请求成功
-                    $this->saveApiResponse($result, $mid, $page);
-                    $this->logApiCall("[CACHE WRITE]", $mid, $page);
-                    return $result;
-                } else {
-                    // API返回错误代码
-                    $this->logApiCall("[API ERROR] " . $result['code'], $mid, $page);
-                }
+                $this->logApiCall("[API ERROR] " . $result['code'], $mid, $page);
             }
         } catch (Exception $e) {
-            // 捕获可能的异常
             $this->logApiCall("[API EXCEPTION] " . $e->getMessage(), $mid, $page);
         }
         
@@ -536,12 +616,17 @@ class BilibiliDynamic {
      * @return int 动态总数
      */
     public function getDynamicCount($mid) {
-        $result = $this->getUserDynamics($mid, 1, 1);
+        $result = $this->getUserDynamics($mid, 1, 12);
         
-        if (empty($result) || !isset($result['data']['page']['total'])) {
+        if (empty($result) || !isset($result['data']['items'])) {
             return 0;
         }
         
-        return $result['data']['page']['total'];
+        $count = count($result['data']['items']);
+        if (!empty($result['data']['has_more'])) {
+            return max($count, 12);
+        }
+        
+        return $count;
     }
 } 
