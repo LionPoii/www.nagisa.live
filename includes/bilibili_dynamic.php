@@ -198,6 +198,55 @@ class BilibiliDynamic {
         
         return $result;
     }
+
+    /**
+     * 通过 feed/space 获取用户动态（含置顶标签与图文 draw.items，需有效 Cookie）
+     *
+     * @param int $mid 用户ID
+     * @param int $page 页码
+     * @param int $page_size 每页大小
+     * @return array|null
+     */
+    private function fetchFeedSpacePage($mid, $page, $page_size) {
+        $api_url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space';
+        $params = [
+            'host_mid' => $mid,
+            'offset' => '',
+            'page' => max(1, (int) $page),
+            'features' => 'itemOpusStyle',
+            'timezone_offset' => -480,
+        ];
+
+        if ($page_size > 0) {
+            $params['page_size'] = min($page_size, 30);
+        }
+
+        $this->applyRequestHeaders($mid);
+        $result = $this->httpGet($api_url, $params);
+
+        if (!$this->isValidDynamicResponse($result)) {
+            return null;
+        }
+
+        if ($page_size > 0 && !empty($result['data']['items'])) {
+            $result['data']['items'] = array_slice($result['data']['items'], 0, $page_size);
+        }
+
+        $item_count = count($result['data']['items']);
+        $result['data']['page'] = [
+            'total' => empty($result['data']['has_more']) ? $item_count : max($item_count, $page * max($page_size, 1))
+        ];
+
+        return $result;
+    }
+
+    /**
+     * 是否已配置可用于 feed/space 的 B 站 Cookie
+     */
+    private function hasBilibiliCookie() {
+        $cookie = $this->getBilibiliCookie();
+        return is_string($cookie) && trim($cookie) !== '';
+    }
     
     /**
      * 记录日志
@@ -233,7 +282,53 @@ class BilibiliDynamic {
     }
     
     /**
-     * 提取动态数据的对比指纹（ID + 发布时间）
+     * 从 API 原始动态项提取图片 URL（用于缓存指纹，检测换图但未改发布时间的情况）
+     *
+     * @param array $item 单条动态
+     * @return string 排序后的 URL 列表，逗号分隔
+     */
+    private function extractRawItemImageUrls($item) {
+        $urls = [];
+        $major = $item['modules']['module_dynamic']['major'] ?? [];
+
+        if (!empty($major['opus']['pics']) && is_array($major['opus']['pics'])) {
+            foreach ($major['opus']['pics'] as $pic) {
+                if (!empty($pic['url'])) {
+                    $urls[] = (string) $pic['url'];
+                }
+            }
+        }
+
+        if (!empty($major['draw']['pics']) && is_array($major['draw']['pics'])) {
+            foreach ($major['draw']['pics'] as $pic) {
+                if (!empty($pic['url'])) {
+                    $urls[] = (string) $pic['url'];
+                } elseif (!empty($pic['src'])) {
+                    $urls[] = (string) $pic['src'];
+                }
+            }
+        }
+
+        if (!empty($major['draw']['items']) && is_array($major['draw']['items'])) {
+            foreach ($major['draw']['items'] as $pic) {
+                if (!empty($pic['src'])) {
+                    $urls[] = (string) $pic['src'];
+                }
+            }
+        }
+
+        if (!empty($major['common']['cover']['src'])) {
+            $urls[] = (string) $major['common']['cover']['src'];
+        }
+
+        $urls = array_values(array_unique($urls));
+        sort($urls);
+
+        return implode(',', $urls);
+    }
+
+    /**
+     * 提取动态数据的对比指纹（ID + 发布时间 + 图片 URL）
      *
      * @param array|null $data API 响应数据
      * @return string
@@ -247,7 +342,9 @@ class BilibiliDynamic {
         foreach ($data['data']['items'] as $item) {
             $parts[] = ($item['id_str'] ?? '')
                 . ':'
-                . ($item['modules']['module_author']['pub_ts'] ?? 0);
+                . ($item['modules']['module_author']['pub_ts'] ?? 0)
+                . ':'
+                . $this->extractRawItemImageUrls($item);
         }
         
         return md5(implode('|', $parts));
@@ -333,15 +430,27 @@ class BilibiliDynamic {
             $this->logApiCall("[CACHE MISS]", $mid, $page);
         }
         
-        // 尝试从API获取数据（使用 feed/all，feed/space 会触发 412 风控）
+        // 有 Cookie 时优先 feed/space（含置顶与图文原图）；否则或失败时回退 feed/all
         try {
+            $result = null;
+
+            if ($this->hasBilibiliCookie()) {
+                $result = $this->fetchFeedSpacePage($mid, $page, $page_size);
+                if ($this->isValidDynamicResponse($result)) {
+                    $this->saveApiResponse($result, $mid, $page);
+                    $this->logApiCall("[CACHE WRITE space]", $mid, $page);
+                    return $result;
+                }
+                $this->logApiCall("[SPACE FEED FAILED, fallback all]", $mid, $page);
+            }
+
             $result = $this->fetchFeedAllPage($mid, $page, $page_size);
             
             $this->logApiCall("[API RESP] CODE:" . ($result['code'] ?? 'unknown'), $mid, $page);
             
             if ($this->isValidDynamicResponse($result)) {
                 $this->saveApiResponse($result, $mid, $page);
-                $this->logApiCall("[CACHE WRITE]", $mid, $page);
+                $this->logApiCall("[CACHE WRITE all]", $mid, $page);
                 return $result;
             }
             
@@ -457,11 +566,20 @@ class BilibiliDynamic {
             }
         }
         
-        // 2. 检查draw动态图片
+        // 2. 检查 draw 动态图片（pics 或 feed/space 的 items）
         if (isset($dynamic['modules']['module_dynamic']['major']['draw']['pics'])) {
             foreach ($dynamic['modules']['module_dynamic']['major']['draw']['pics'] as $pic) {
                 if (isset($pic['url'])) {
                     $images[] = BilibiliRichText::normalizeMediaUrl($pic['url']);
+                } elseif (isset($pic['src'])) {
+                    $images[] = BilibiliRichText::normalizeMediaUrl($pic['src']);
+                }
+            }
+        }
+        if (isset($dynamic['modules']['module_dynamic']['major']['draw']['items'])) {
+            foreach ($dynamic['modules']['module_dynamic']['major']['draw']['items'] as $pic) {
+                if (isset($pic['src'])) {
+                    $images[] = BilibiliRichText::normalizeMediaUrl($pic['src']);
                 }
             }
         }
@@ -560,6 +678,37 @@ class BilibiliDynamic {
         }
     }
     
+    /**
+     * 获取置顶动态的第一张图片 URL（周表用，始终走 feed/space 拉最新）
+     *
+     * @param int|string $mid B 站用户 mid
+     * @return string https 图片地址，未找到时返回空字符串
+     */
+    public function getPinnedDynamicFirstImageUrl($mid) {
+        if (!$this->hasBilibiliCookie()) {
+            return '';
+        }
+
+        $result = $this->fetchFeedSpacePage($mid, 1, 20);
+        if (!$this->isValidDynamicResponse($result)) {
+            return '';
+        }
+
+        foreach ($result['data']['items'] as $item) {
+            $tag = $item['modules']['module_tag']['text'] ?? '';
+            if ($tag !== '置顶') {
+                continue;
+            }
+
+            $processed = $this->processDynamic($item);
+            if (!empty($processed['images'][0])) {
+                return $processed['images'][0];
+            }
+        }
+
+        return '';
+    }
+
     /**
      * 获取处理后的动态列表
      * 

@@ -471,37 +471,23 @@ try {
     error_log('Error fetching clothes items: ' . $e->getMessage());
 }
 
-// 获取置顶动态的第一张图片
+// 获取置顶动态的第一张图片（feed/space + draw.items，与 feed/all 列表结构不同）
 $pinned_dynamic_image = '';
+$pinned_dynamic_image_bust = '';
 try {
     require_once '../includes/bilibili_dynamic.php';
     
-    // 获取B站用户ID
     $stmt = $conn->prepare("SELECT config_value FROM site_config WHERE config_key = 'bilibili_mid'");
     $stmt->execute();
     $config = $stmt->fetch(PDO::FETCH_ASSOC);
     $mid = $config && !empty($config['config_value']) ? $config['config_value'] : '2124647716';
     
     $biliDynamic = new BilibiliDynamic();
-    $dynamics = $biliDynamic->getProcessedDynamics($mid, 1, 5); // 获取前5条动态
-    
-    // 找到第一条置顶动态
-    $pinned_dynamic = null;
-    foreach ($dynamics as $dynamic) {
-        if ($dynamic['is_pinned']) {
-            $pinned_dynamic = $dynamic;
-            break;
-        }
-    }
-    
-    // 获取第一张图片
-    if ($pinned_dynamic && !empty($pinned_dynamic['images'])) {
-        // 处理图片URL，直接使用B站直链
-        $image_url = $pinned_dynamic['images'][0];
-        $pinned_dynamic_image = (strpos($image_url, '//') === 0) ? 'https:' . $image_url : $image_url;
+    $pinned_dynamic_image = $biliDynamic->getPinnedDynamicFirstImageUrl($mid);
+    if ($pinned_dynamic_image !== '') {
+        $pinned_dynamic_image_bust = substr(md5($pinned_dynamic_image), 0, 12);
     }
 } catch (Exception $e) {
-    // 出错时记录日志
     $log_file = __DIR__ . '/../logs/admin_pinned_dynamic.log';
     @file_put_contents($log_file, date('Y-m-d H:i:s') . " 获取置顶动态失败: " . $e->getMessage() . "\n", FILE_APPEND);
 }
@@ -1182,7 +1168,7 @@ include 'admin_header.php';
                     <div class="nagisa-form-group">
                         <h3 class="nagisa-section-title">置顶动态周表</h3>
                         <div class="schedule-image-container">
-                            <img src="<?php echo htmlspecialchars($pinned_dynamic_image); ?>" alt="置顶动态图片" referrerpolicy="no-referrer">
+                            <img src="<?php echo htmlspecialchars($pinned_dynamic_image . ($pinned_dynamic_image_bust ? '?v=' . $pinned_dynamic_image_bust : '')); ?>" alt="置顶动态图片" referrerpolicy="no-referrer">
                         </div>
                         <div class="flex justify-between mt-2">
                             <p class="text-sm text-gray-500">可以将此图片用作周表</p>
