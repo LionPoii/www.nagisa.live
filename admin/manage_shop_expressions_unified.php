@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 require_once '../includes/database.php';
 require_once '../includes/toast.php';
+require_once '../includes/shopcar_helpers.php';
 
 // 检查管理员登录状态
 checkAdminAuth();
@@ -13,6 +14,11 @@ $conn = $db->getConnection();
 // 初始化变量
 $error = '';
 $success = '';
+$shopProductFlash = null;
+if (!empty($_SESSION['shop_product_flash'])) {
+    $shopProductFlash = $_SESSION['shop_product_flash'];
+    unset($_SESSION['shop_product_flash']);
+}
 
 // 检查图片表是否存在，如果不存在则创建
 $stmt = $conn->prepare("SHOW TABLES LIKE 'expression_images'");
@@ -50,6 +56,20 @@ if ($stmt->rowCount() == 0) {
 $stmt = $conn->prepare("SHOW TABLES LIKE 'shopcar_products'");
 $stmt->execute();
 $shopcarTableExists = ($stmt->rowCount() > 0);
+$shopcarSeriesTableExists = false;
+$shopcarSeries = [];
+
+if ($shopcarTableExists && $conn) {
+    shopcarEnsureSchema($conn);
+    $shopcarSeriesTableExists = shopcarTableExists($conn, 'shopcar_series');
+    if ($shopcarSeriesTableExists) {
+        try {
+            $shopcarSeries = shopcarGetAllSeriesFlat($conn);
+        } catch (PDOException $e) {
+            error_log('获取商品系列失败: ' . $e->getMessage());
+        }
+    }
+}
 
 // 处理图片上传
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_expression'])) {
@@ -199,8 +219,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product']) && $sh
         $description = trim($_POST['product_description'] ?? $_POST['edit_product_description'] ?? '');
         $price = trim($_POST['product_price'] ?? $_POST['edit_product_price'] ?? '');
         $link = trim($_POST['product_link'] ?? $_POST['edit_product_link'] ?? '');
-        $position = isset($_POST['product_position']) ? intval($_POST['product_position']) : 0;
-        $active = isset($_POST['product_active']) ? 1 : 0;
+        $position = isset($_POST['product_position']) ? intval($_POST['product_position']) : (isset($_POST['edit_product_position']) ? intval($_POST['edit_product_position']) : 0);
+        $active = isset($_POST['product_active']) || isset($_POST['edit_product_active']) ? 1 : 0;
+        $seriesId = shopcarParseSeriesIdFromPost();
         
         if (empty($title)) {
             throw new Exception('商品标题不能为空');
@@ -253,8 +274,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product']) && $sh
                 $imagePath = "assets/uploads/products/" . $newFileName;
                 
                 // 插入数据库
-                $stmt = $conn->prepare("INSERT INTO shopcar_products (title, description, price, image, link, position, active) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$title, $description, $price, $imagePath, $link, $position, $active]);
+                $stmt = $conn->prepare(shopcarProductInsertSql($conn));
+                $stmt->execute(shopcarProductInsertParams($conn, $title, $description, $price, $imagePath, $link, $seriesId, $position, $active));
                 
                 showToast('商品添加成功！');
             } else {
@@ -296,6 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['update_product']) ||
             $active = isset($_POST['edit_product_active']) ? 1 : 0;
             $oldImage = isset($_POST['edit_product_image_old']) ? $_POST['edit_product_image_old'] : '';
             $imageField = 'edit_product_image';
+            $seriesId = shopcarParseSeriesIdFromPost();
         } else {
             // 来自内嵌编辑表单
             $id = intval($_POST['product_id']);
@@ -307,6 +329,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['update_product']) ||
             $active = isset($_POST['active']) ? 1 : 0;
             $oldImage = isset($_POST['current_image']) ? '../' . $_POST['current_image'] : '';
             $imageField = 'image';
+            $seriesId = isset($_POST['series_id']) && $_POST['series_id'] !== '' ? intval($_POST['series_id']) : null;
         }
         
         if (empty($title)) {
@@ -367,29 +390,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['update_product']) ||
             }
         }
         
-        // 更新数据库 - 检查表中是否有updated_at字段
-        $checkStmt = $conn->prepare("SHOW COLUMNS FROM shopcar_products LIKE 'updated_at'");
-        $checkStmt->execute();
-        
-        if ($checkStmt->rowCount() > 0) {
-            // 表中有updated_at字段
-            $stmt = $conn->prepare("UPDATE shopcar_products SET title = ?, description = ?, price = ?, image = ?, link = ?, position = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
-            $result = $stmt->execute([$title, $description, $price, $imagePath, $link, $position, $active, $id]);
-        } else {
-            // 表中没有updated_at字段
-            $stmt = $conn->prepare("UPDATE shopcar_products SET title = ?, description = ?, price = ?, image = ?, link = ?, position = ?, active = ? WHERE id = ?");
-            $result = $stmt->execute([$title, $description, $price, $imagePath, $link, $position, $active, $id]);
-        }
+        // 更新数据库
+        $stmt = $conn->prepare(shopcarProductUpdateSql($conn));
+        $result = $stmt->execute(shopcarProductUpdateParams($conn, $title, $description, $price, $imagePath, $link, $seriesId, $position, $active, $id));
         
         if ($result) {
-            showToast('商品更新成功！');
-            // 与图片管理保持一致的样式
-            echo '<script>
-                setTimeout(function() {
-                    window.location.href = "' . $_SERVER['PHP_SELF'] . '?section=products";
-                }, 1500);
-            </script>';
-            // 不立即退出，让Toast有时间显示
+            $_SESSION['shop_product_flash'] = ['message' => '商品更新成功！', 'type' => 'success'];
+            header('Location: ' . $_SERVER['PHP_SELF'] . '?section=products');
+            exit;
         } else {
             throw new Exception('商品更新失败，可能是数据没有变化或商品不存在');
         }
@@ -701,14 +709,19 @@ if ($shopcarTableExists) {
             $product['position'] = $product['position'] ?? 0;
             $product['active'] = $product['active'] ?? 1;
             $product['image'] = $product['image'] ?? '';
+            $product['series_id'] = $product['series_id'] ?? null;
+            $product['series_label'] = shopcarGetSeriesDisplayName($product['series_id'], $shopcarSeries);
         }
         unset($product);
+
+        $productGroups = shopcarGroupProductsBySeries($products, $shopcarSeries);
         
     } catch (PDOException $e) {
         $error = '获取商品失败: ' . $e->getMessage();
         error_log('获取商品失败: ' . $e->getMessage());
     }
 }
+$productGroups = $productGroups ?? [];
 
 // 设置页面标题
 $page_title = "上传管理"; 
@@ -945,6 +958,111 @@ $extra_styles = '
 .expression-category {
     margin-bottom: 10px;
     min-height: 28px;
+}
+
+.product-card-series-line {
+    font-size: 0.875rem;
+    color: #475569;
+    line-height: 1.4;
+}
+
+.product-card-title-line {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1e293b;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.product-card-meta-line {
+    font-size: 0.75rem;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.product-grid-by-series {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.product-series-group {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.product-series-group-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    background: linear-gradient(45deg, #f8fafc, #f1f5f9);
+    color: #334155;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: background 0.2s ease;
+}
+
+.product-series-group-header:hover {
+    background: linear-gradient(45deg, #f1f5f9, #e2e8f0);
+}
+
+.product-series-group-chevron {
+    color: #cc9471;
+    font-size: 0.85rem;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.product-series-group.is-collapsed .product-series-group-chevron {
+    transform: rotate(-90deg);
+}
+
+.product-series-group-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.product-series-group-count {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #64748b;
+    background: #e2e8f0;
+    padding: 2px 8px;
+    border-radius: 9999px;
+}
+
+.product-series-group.is-filter-empty {
+    display: none !important;
+}
+
+.product-series-group-body {
+    padding: 16px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.product-series-group.is-collapsed .product-series-group-body {
+    display: none;
+}
+
+.series-list-item.is-inactive .series-item-title {
+    text-decoration: line-through;
+    text-decoration-color: #94a3b8;
+    color: #94a3b8;
+}
+
+.series-list-item.is-inactive .series-item-desc,
+.series-list-item.is-inactive .series-item-position {
+    color: #94a3b8;
 }
 
 .expression-actions {
@@ -2350,11 +2468,131 @@ include 'admin_header.php';
                                 </select>
                             </div>
                             <div class="flex gap-2">
+                                <?php if ($shopcarSeriesTableExists): ?>
+                                <button type="button" onclick="showSeriesManager()" class="nagisa-btn" style="background: linear-gradient(45deg, #8b5cf6, #a855f7);">
+                                    <i class="fas fa-tags mr-2"></i>系列管理
+                                </button>
+                                <?php endif; ?>
                                 <button type="button" onclick="showAddProductForm()" class="nagisa-btn">
                                     <i class="fas fa-plus mr-2"></i>添加商品
                                 </button>
                             </div>
                         </div>
+
+                        <!-- 商品系列管理界面（仿标签管理） -->
+                        <?php if ($shopcarSeriesTableExists): ?>
+                        <div id="series-manager-section" class="nagisa-card" style="display: none; margin-bottom: 20px;">
+                            <h3 class="nagisa-card-header" style="background: linear-gradient(45deg, #8b5cf6, #a855f7);">
+                                <i class="fas fa-tags mr-2"></i>系列管理
+                            </h3>
+                            <div class="p-6">
+                                <div class="flex justify-between items-center mb-6">
+                                    <div>
+                                        <h4 class="text-xl font-medium text-gray-700">商品系列管理</h4>
+                                        <p class="text-sm text-gray-500 mt-1">管理商品系列，方便分类展示与绑定商品</p>
+                                    </div>
+                                    <button type="button" onclick="hideSeriesManager()" class="nagisa-btn-secondary">
+                                        <i class="fas fa-times mr-2"></i>关闭管理
+                                    </button>
+                                </div>
+
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <div class="nagisa-card">
+                                        <h5 class="nagisa-card-header" style="background: linear-gradient(45deg, #10b981, #059669);">
+                                            <i class="fas fa-plus mr-2"></i>添加商品系列
+                                        </h5>
+                                        <div class="p-4">
+                                            <div class="nagisa-form-group">
+                                                <label class="nagisa-label">系列名称 <span class="text-red-500">*</span></label>
+                                                <input type="text" id="new-series-name" class="nagisa-input">
+                                            </div>
+                                            <div class="nagisa-form-group">
+                                                <label class="nagisa-label">系列说明</label>
+                                                <textarea id="new-series-description" class="nagisa-textarea" rows="3"></textarea>
+                                            </div>
+                                            <div class="nagisa-form-group">
+                                                <label class="nagisa-label">显示顺序</label>
+                                                <input type="number" id="new-series-position" class="nagisa-input" value="0">
+                                            </div>
+                                            <div class="nagisa-form-group">
+                                                <label class="flex items-center">
+                                                    <span class="mr-2">前台显示</span>
+                                                    <label class="switch">
+                                                        <input type="checkbox" id="new-series-active" checked>
+                                                        <span class="slider"></span>
+                                                    </label>
+                                                </label>
+                                            </div>
+                                            <button type="button" onclick="addNewSeries()" class="nagisa-btn w-full" style="background: linear-gradient(45deg, #10b981, #059669);">
+                                                <i class="fas fa-plus mr-2"></i>添加商品系列
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="nagisa-card">
+                                        <h5 class="nagisa-card-header" style="background: linear-gradient(45deg, #3b82f6, #2563eb);">
+                                            <i class="fas fa-list mr-2"></i>现有系列
+                                        </h5>
+                                        <div class="p-4">
+                                            <div id="existing-series-list" class="space-y-3">
+                                                <?php if (empty($shopcarSeries)): ?>
+                                                <div class="text-center py-8 text-gray-500 series-empty-placeholder">
+                                                    <i class="fas fa-tags text-4xl mb-3"></i>
+                                                    <p>暂无商品系列，请添加</p>
+                                                </div>
+                                                <?php else: ?>
+                                                <?php foreach ($shopcarSeries as $s): ?>
+                                                <?php
+                                                    $seriesJson = json_encode([
+                                                        'id' => (int)$s['id'],
+                                                        'title' => $s['title'],
+                                                        'description' => $s['description'] ?? '',
+                                                        'position' => (int)$s['position'],
+                                                        'active' => (int)$s['active'],
+                                                    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+                                                ?>
+                                                <div class="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 series-list-item<?php echo $s['active'] ? '' : ' is-inactive'; ?>" data-series-id="<?php echo (int)$s['id']; ?>" data-series="<?php echo rawurlencode($seriesJson); ?>">
+                                                    <div class="flex items-center min-w-0 flex-1">
+                                                        <div class="w-3 h-3 rounded-full mr-3 flex-shrink-0" style="background: linear-gradient(45deg, #e9967a, #cc9471);"></div>
+                                                        <div class="min-w-0">
+                                                            <p class="font-semibold text-gray-800 text-base series-item-title m-0"><?php echo htmlspecialchars($s['title']); ?></p>
+                                                            <?php if (!empty($s['description'])): ?>
+                                                            <p class="text-xs text-gray-500 mt-1 truncate series-item-desc"><?php echo htmlspecialchars($s['description']); ?></p>
+                                                            <?php endif; ?>
+                                                            <p class="text-xs text-gray-500 mt-1 m-0">
+                                                                顺序: <span class="series-item-position font-medium text-gray-600"><?php echo (int)$s['position']; ?></span>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex gap-2 flex-shrink-0 ml-3">
+                                                        <button type="button" class="nagisa-btn nagisa-btn-mini series-edit-btn" style="background: linear-gradient(45deg, #f59e0b, #d97706);">
+                                                            <i class="fas fa-edit mr-1"></i>编辑
+                                                        </button>
+                                                        <button type="button" onclick="openDeleteSeriesModal(<?php echo (int)$s['id']; ?>, this.closest('.series-list-item').querySelector('.series-item-title').textContent.trim())" class="nagisa-btn-danger nagisa-btn-mini">
+                                                            <i class="fas fa-trash mr-1"></i>删除
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <?php endforeach; ?>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6 p-4 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
+                                    <h6 class="font-medium mb-2">
+                                        <i class="fas fa-info-circle mr-2"></i>使用说明
+                                    </h6>
+                                    <ul class="text-sm text-blue-700 space-y-1">
+                                        <li>· 商品系列用于前台左侧分类导航</li>
+                                        <li>· 添加系列后，可在商品编辑时选择绑定</li>
+                                        <li>· 删除系列不会影响已存在商品，但需先解除绑定</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         
                         <!-- 添加/编辑商品表单 -->
                         <div id="add-product-form" class="nagisa-card" style="display: none; margin-bottom: 20px;">
@@ -2376,6 +2614,15 @@ include 'admin_header.php';
                                     
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div>
+                                            <?php if ($shopcarSeriesTableExists): ?>
+                                            <div class="nagisa-form-group">
+                                                <label class="nagisa-label">商品系列</label>
+                                                <select class="nagisa-input" name="edit_product_series_id" id="product_series_id">
+                                                    <?php echo shopcarSeriesSelectOptions($shopcarSeries); ?>
+                                                </select>
+                                            </div>
+                                            <?php endif; ?>
+
                                             <div class="nagisa-form-group">
                                                 <label class="nagisa-label">商品名称 <span class="text-red-500">*</span></label>
                                                 <input type="text" class="nagisa-input" name="edit_product_title" id="product_title" required>
@@ -2384,16 +2631,16 @@ include 'admin_header.php';
                                             
                                             <div class="nagisa-form-group">
                                                 <label class="nagisa-label">价格</label>
-                                                <input type="text" class="nagisa-input" name="edit_product_price" id="product_price" placeholder="例如: ¥99.00">
+                                                <input type="text" class="nagisa-input" name="edit_product_price" id="product_price">
                                                 <p class="text-xs text-gray-500 mt-1">商品的价格信息</p>
                                             </div>
                                             
                                             <div class="nagisa-form-group">
                                                 <label class="nagisa-label">购买链接</label>
-                                                <input type="text" class="nagisa-input" name="edit_product_link" id="product_link" placeholder="https://">
+                                                <input type="text" class="nagisa-input" name="edit_product_link" id="product_link">
                                                 <p class="text-xs text-gray-500 mt-1">商品的购买链接（可选）</p>
                                             </div>
-                                            
+
                                             <div class="nagisa-form-group">
                                                 <label class="nagisa-label">显示顺序</label>
                                                 <input type="number" class="nagisa-input" name="edit_product_position" id="product_position" value="0">
@@ -2469,43 +2716,63 @@ include 'admin_header.php';
                             </button>
                         </div>
                         <?php else: ?>
-                        <!-- 商品网格视图 -->
-                        <div class="expression-grid" id="product-grid">
-                            <?php foreach ($products as $product): ?>
-                            <div class="expression-item" 
-                                 data-id="<?php echo $product['id']; ?>" 
-                                 data-status="<?php echo $product['active']; ?>" 
-                                 data-title="<?php echo htmlspecialchars($product['title']); ?>" 
-                                 data-category="product"
-                                 data-price="<?php echo htmlspecialchars($product['price']); ?>"
-                                 data-description="<?php echo htmlspecialchars($product['description']); ?>"
-                                 data-link="<?php echo htmlspecialchars($product['link']); ?>"
-                                 data-position="<?php echo htmlspecialchars($product['position']); ?>"
-                                 data-image="<?php echo htmlspecialchars($product['image']); ?>">
-                                <div class="expression-image">
-                                    <img data-src="../<?php echo htmlspecialchars($product['image']); ?>" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24' fill='%23cccccc'%3E%3Cpath d='M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2zm0 2v14h14V5H5zm11.5 9c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm-8-3h5V9h-5v2zm0-3h8V6h-8v2z'/%3E%3C/svg%3E" alt="<?php echo htmlspecialchars($product['title']); ?>" onerror="this.src='../assets/images/placeholder.png'">
-                                </div>
-                                <div class="expression-info">
-                                    <div class="flex items-center justify-between mb-2">
-                                        <div class="expression-title" title="<?php echo htmlspecialchars($product['title']); ?>"><?php echo htmlspecialchars($product['title']); ?></div>
-                                        <div class="expression-toggle">
-                                            <label class="switch">
-                                                <input type="checkbox" class="status-toggle" data-id="<?php echo $product['id']; ?>" data-type="product" <?php echo $product['active'] ? 'checked' : ''; ?>>
-                                                <span class="slider"></span>
-                                            </label>
+                        <!-- 商品按系列分组（可折叠） -->
+                        <div class="product-grid-by-series" id="product-grid">
+                            <?php foreach ($productGroups as $group): ?>
+                            <?php
+                                $groupKey = $group['id'] > 0 ? 'series-' . (int)$group['id'] : 'uncategorized';
+                                $groupTotal = count($group['products']);
+                                $groupInactive = empty($group['active']);
+                            ?>
+                            <div class="product-series-group" data-series-key="<?php echo htmlspecialchars($groupKey); ?>" data-series-id="<?php echo (int)$group['id']; ?>">
+                                <button type="button" class="product-series-group-header" onclick="toggleProductSeriesGroup(this)" aria-expanded="true">
+                                    <i class="fas fa-chevron-down product-series-group-chevron"></i>
+                                    <span class="product-series-group-title"><?php echo htmlspecialchars($group['title']); ?></span>
+                                    <span class="product-series-group-count" data-total="<?php echo $groupTotal; ?>"><?php echo $groupTotal; ?> 件</span>
+                                </button>
+                                <div class="product-series-group-body expression-grid">
+                                    <?php foreach ($group['products'] as $product): ?>
+                                    <div class="expression-item"
+                                         data-id="<?php echo (int)$product['id']; ?>"
+                                         data-status="<?php echo (int)$product['active']; ?>"
+                                         data-title="<?php echo htmlspecialchars($product['title'], ENT_QUOTES, 'UTF-8'); ?>"
+                                         data-category="product"
+                                         data-price="<?php echo htmlspecialchars($product['price'], ENT_QUOTES, 'UTF-8'); ?>"
+                                         data-description="<?php echo htmlspecialchars($product['description'], ENT_QUOTES, 'UTF-8'); ?>"
+                                         data-link="<?php echo htmlspecialchars($product['link'], ENT_QUOTES, 'UTF-8'); ?>"
+                                         data-position="<?php echo (int)$product['position']; ?>"
+                                         data-image="<?php echo htmlspecialchars($product['image'], ENT_QUOTES, 'UTF-8'); ?>"
+                                         data-series-id="<?php echo (int)($product['series_id'] ?? 0); ?>">
+                                        <div class="expression-image">
+                                            <img data-src="../<?php echo htmlspecialchars($product['image']); ?>" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24' fill='%23cccccc'%3E%3Cpath d='M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2zm0 2v14h14V5H5zm11.5 9c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm-8-3h5V9h-5v2zm0-3h8V6h-8v2z'/%3E%3C/svg%3E" alt="<?php echo htmlspecialchars($product['title']); ?>" onerror="this.src='../assets/images/placeholder.png'">
+                                        </div>
+                                        <div class="expression-info">
+                                            <div class="flex items-start justify-between mb-2">
+                                                <div class="flex-1 min-w-0 pr-2">
+                                                    <p class="product-card-title-line m-0 mb-1.5" title="<?php echo htmlspecialchars($product['title']); ?>"><?php echo htmlspecialchars($product['title']); ?></p>
+                                                    <p class="product-card-meta-line m-0">
+                                                        价格: <span class="font-medium text-gray-600"><?php echo $product['price'] !== '' ? htmlspecialchars($product['price']) : '—'; ?></span>
+                                                        <span class="mx-1 text-gray-300">·</span>
+                                                        顺序: <span class="font-medium text-gray-600"><?php echo (int)$product['position']; ?></span>
+                                                    </p>
+                                                </div>
+                                                <div class="expression-toggle flex-shrink-0">
+                                                    <label class="switch">
+                                                        <input type="checkbox" class="status-toggle" data-id="<?php echo $product['id']; ?>" data-type="product" <?php echo $product['active'] ? 'checked' : ''; ?>>
+                                                        <span class="slider"></span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="expression-actions">
+                                                <button type="button" class="nagisa-btn nagisa-btn-mini product-edit-btn"><i class="fas fa-edit mr-1"></i>编辑</button>
+                                                <form id="delete-product-form-<?php echo $product['id']; ?>" method="POST" style="display:inline">
+                                                    <input type="hidden" name="product_id" value="<?php echo $product['id']; ?>">
+                                                    <button type="button" onclick="showDeleteConfirmModal('delete-product-form-<?php echo $product['id']; ?>', 'product', '<?php echo htmlspecialchars($product['title'], ENT_QUOTES, 'UTF-8'); ?>')" class="nagisa-btn-danger nagisa-btn-mini"><i class="fas fa-trash mr-1"></i>删除</button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="expression-category">
-                                        <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded mr-1 mb-1"><?php echo htmlspecialchars($product['price']); ?></span>
-                                        <span class="inline-block bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded mr-1 mb-1"><?php echo htmlspecialchars($product['position']); ?></span>
-                                    </div>
-                                    <div class="expression-actions">
-                                        <button type="button" onclick="editProduct(<?php echo $product['id']; ?>, '<?php echo addslashes(htmlspecialchars($product['title'])); ?>', '<?php echo addslashes(htmlspecialchars($product['price'])); ?>', '<?php echo addslashes(htmlspecialchars($product['description'])); ?>', '<?php echo addslashes(htmlspecialchars($product['link'])); ?>', '<?php echo $product['position']; ?>', '<?php echo $product['active']; ?>', '<?php echo addslashes(htmlspecialchars($product['image'])); ?>')" class="nagisa-btn nagisa-btn-mini"><i class="fas fa-edit mr-1"></i>编辑</button>
-                                        <form id="delete-product-form-<?php echo $product['id']; ?>" method="POST" style="display:inline">
-                                            <input type="hidden" name="product_id" value="<?php echo $product['id']; ?>">
-                                            <button type="button" onclick="showDeleteConfirmModal('delete-product-form-<?php echo $product['id']; ?>', 'product', '<?php echo htmlspecialchars($product['title']); ?>')" class="nagisa-btn-danger nagisa-btn-mini"><i class="fas fa-trash mr-1"></i>删除</button>
-                                        </form>
-                                    </div>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                             <?php endforeach; ?>
@@ -2556,6 +2823,81 @@ include 'admin_header.php';
                 <button type="button" onclick="saveTagEdit()" class="nagisa-btn" style="background: linear-gradient(45deg, #cc9471, #f3b4a4);">
                     <i class="fas fa-save mr-2"></i>保存
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑商品系列弹窗 -->
+<div id="edit-series-modal" class="fixed inset-0 flex items-center justify-center z-50" style="display: none;">
+    <div class="absolute inset-0 bg-black bg-opacity-50" onclick="closeEditSeriesModal()"></div>
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 z-10 overflow-hidden border-2 border-[#cc9471]">
+        <div class="bg-gradient-to-r from-[#cc9471] to-[#f3b4a4] text-white px-6 py-4 flex justify-between items-center">
+            <h3 class="text-lg font-semibold">编辑商品系列</h3>
+            <button type="button" onclick="closeEditSeriesModal()" class="text-white hover:text-gray-200">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-4">
+            <input type="hidden" id="edit-series-id" value="">
+            <div class="nagisa-form-group">
+                <label class="nagisa-label">系列名称 <span class="text-red-500">*</span></label>
+                <input type="text" id="edit-series-name" class="nagisa-input">
+            </div>
+            <div class="nagisa-form-group">
+                <label class="nagisa-label">系列说明</label>
+                <textarea id="edit-series-description" class="nagisa-textarea" rows="3"></textarea>
+            </div>
+            <div class="nagisa-form-group">
+                <label class="nagisa-label">显示顺序</label>
+                <input type="number" id="edit-series-position" class="nagisa-input" value="0">
+            </div>
+            <div class="nagisa-form-group">
+                <label class="flex items-center">
+                    <span class="mr-2">前台显示</span>
+                    <label class="switch">
+                        <input type="checkbox" id="edit-series-active" checked>
+                        <span class="slider"></span>
+                    </label>
+                </label>
+            </div>
+            <div class="flex justify-end space-x-3 mt-4">
+                <button type="button" onclick="closeEditSeriesModal()" class="nagisa-btn-secondary">
+                    <i class="fas fa-times mr-2"></i>取消
+                </button>
+                <button type="button" onclick="saveSeriesEdit()" class="nagisa-btn" style="background: linear-gradient(45deg, #cc9471, #f3b4a4);">
+                    <i class="fas fa-save mr-2"></i>保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除商品系列确认弹窗 -->
+<div id="delete-series-modal" class="fixed inset-0 flex items-center justify-center z-50" style="display: none;">
+    <div class="absolute inset-0 bg-black bg-opacity-50" onclick="closeDeleteSeriesModal()"></div>
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 z-10 overflow-hidden border-2 border-[#cc9471]">
+        <div class="bg-gradient-to-r from-[#cc9471] to-[#f3b4a4] px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center">
+                <h3 class="text-lg font-semibold" style="color: #cc9471;">删除商品系列</h3>
+                <div class="text-white text-xl ml-2"><i class="fas fa-exclamation-triangle"></i></div>
+            </div>
+            <button type="button" onclick="closeDeleteSeriesModal()" class="text-white hover:text-gray-200">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-4">
+            <input type="hidden" id="delete-series-id" value="">
+            <div class="mb-6">
+                <div class="bg-red-50 px-4 py-3 rounded-lg border-l-4 border-red-300">
+                    <p class="text-[#cc9471] font-medium">
+                        确定要删除商品系列「<span id="delete-series-display-name" class="font-bold" style="color: #cc9471;"></span>」吗？此操作不可恢复。
+                    </p>
+                </div>
+            </div>
+            <div class="flex justify-between">
+                <button type="button" onclick="closeDeleteSeriesModal()" class="nagisa-btn-secondary">取消</button>
+                <button type="button" onclick="confirmDeleteSeries()" class="nagisa-btn-danger">确认删除</button>
             </div>
         </div>
     </div>
@@ -2653,7 +2995,8 @@ function showSection(sectionId) {
             // 显示商品列表或空商品提示
             const productGrid = document.getElementById('product-grid');
             if (productGrid) {
-                productGrid.style.display = 'grid';
+                productGrid.style.display = 'block';
+                applyProductSeriesCollapseState();
             }
             
             const emptyMessage = document.querySelector('#products .flex.flex-col.items-center.justify-center');
@@ -3619,6 +3962,8 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('add-expression-form').style.display = 'none';
     document.getElementById('audio-tag-manager-section').style.display = 'none';
     document.getElementById('add-audio-form').style.display = 'none';
+    const seriesManager = document.getElementById('series-manager-section');
+    if (seriesManager) seriesManager.style.display = 'none';
     
     // 添加表单提交后的处理
     const forms = document.querySelectorAll('form');
@@ -3676,6 +4021,29 @@ document.addEventListener('DOMContentLoaded', function() {
         productStatusFilter.addEventListener('change', function() {
             filterItems('product');
         });
+    }
+
+    const productGrid = document.getElementById('product-grid');
+    if (productGrid) {
+        productGrid.addEventListener('click', function(e) {
+            const btn = e.target.closest('.product-edit-btn');
+            if (!btn) return;
+            e.preventDefault();
+            const item = btn.closest('.expression-item');
+            if (!item || !item.dataset.id) return;
+            editProduct(
+                item.dataset.id,
+                item.dataset.title || '',
+                item.dataset.price || '',
+                item.dataset.description || '',
+                item.dataset.link || '',
+                item.dataset.position || '0',
+                item.dataset.status || '1',
+                item.dataset.image || '',
+                item.dataset.seriesId || item.getAttribute('data-series-id') || '0'
+            );
+        });
+        applyProductSeriesCollapseState();
     }
     
     // 添加toast消息显示功能
@@ -3796,6 +4164,77 @@ function filterItems(type) {
         
         console.log(`Item "${title}": search=${matchesSearch}, filter=${matchesFilter}, show=${shouldShow}`);
     });
+
+    if (type === 'product') {
+        grid.querySelectorAll('.product-series-group').forEach(group => {
+            const items = group.querySelectorAll('.expression-item');
+            let visibleCount = 0;
+            items.forEach(item => {
+                if (!item.classList.contains('filtered-out') && item.style.display !== 'none') {
+                    visibleCount++;
+                }
+            });
+            const countEl = group.querySelector('.product-series-group-count');
+            const total = countEl ? parseInt(countEl.getAttribute('data-total'), 10) || items.length : items.length;
+            if (countEl) {
+                countEl.textContent = visibleCount === total
+                    ? `${total} 件`
+                    : `${visibleCount} / ${total} 件`;
+            }
+            if (visibleCount === 0) {
+                group.classList.add('is-filter-empty');
+            } else {
+                group.classList.remove('is-filter-empty');
+            }
+        });
+    }
+}
+
+const PRODUCT_SERIES_COLLAPSE_KEY = 'shop_products_series_collapsed';
+
+function getProductSeriesCollapseState() {
+    try {
+        const raw = localStorage.getItem(PRODUCT_SERIES_COLLAPSE_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function saveProductSeriesCollapseState() {
+    const state = {};
+    document.querySelectorAll('#product-grid .product-series-group').forEach(function(group) {
+        const key = group.getAttribute('data-series-key');
+        if (key) {
+            state[key] = group.classList.contains('is-collapsed');
+        }
+    });
+    try {
+        localStorage.setItem(PRODUCT_SERIES_COLLAPSE_KEY, JSON.stringify(state));
+    } catch (e) { /* ignore */ }
+}
+
+function applyProductSeriesCollapseState() {
+    const grid = document.getElementById('product-grid');
+    if (!grid) return;
+    const state = getProductSeriesCollapseState();
+    if (!Object.keys(state).length) return;
+    grid.querySelectorAll('.product-series-group').forEach(function(group) {
+        const key = group.getAttribute('data-series-key');
+        if (!key || !Object.prototype.hasOwnProperty.call(state, key)) return;
+        const header = group.querySelector('.product-series-group-header');
+        const collapsed = !!state[key];
+        group.classList.toggle('is-collapsed', collapsed);
+        if (header) header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    });
+}
+
+function toggleProductSeriesGroup(headerBtn) {
+    const group = headerBtn.closest('.product-series-group');
+    if (!group) return;
+    const collapsed = group.classList.toggle('is-collapsed');
+    headerBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    saveProductSeriesCollapseState();
 }
 
 // 监听浏览器前进后退按钮
@@ -3959,7 +4398,8 @@ function hideAddProductForm() {
     // 显示商品列表或空商品提示
     const productGrid = document.getElementById('product-grid');
     if (productGrid) {
-        productGrid.style.display = 'grid';
+        productGrid.style.display = 'block';
+        applyProductSeriesCollapseState();
     }
     
     const emptyMessage = document.querySelector('#products .flex.flex-col.items-center.justify-center');
@@ -4041,6 +4481,8 @@ function validateProductForm() {
 // 显示添加商品表单
 function showAddProductForm() {
     document.getElementById('add-product-form').style.display = 'block';
+    const seriesSection = document.getElementById('series-manager-section');
+    if (seriesSection) seriesSection.style.display = 'none';
     
     // 隐藏商品列表，但保持主容器可见
     const productGrid = document.getElementById('product-grid');
@@ -4062,7 +4504,8 @@ function hideAddProductForm() {
     // 显示商品列表或空商品提示
     const productGrid = document.getElementById('product-grid');
     if (productGrid) {
-        productGrid.style.display = 'grid';
+        productGrid.style.display = 'block';
+        applyProductSeriesCollapseState();
     }
     
     const emptyMessage = document.querySelector('#products .flex.flex-col.items-center.justify-center');
@@ -4081,6 +4524,8 @@ function hideAddProductForm() {
     // 重置隐藏字段
     document.getElementById('product_id').value = '';
     document.getElementById('product_image_old').value = '';
+    const seriesSelect = document.getElementById('product_series_id');
+    if (seriesSelect) seriesSelect.value = '';
     
     // 隐藏当前图片预览
     document.getElementById('product-current-image').style.display = 'none';
@@ -4098,8 +4543,270 @@ function hideAddProductForm() {
     }
 }
 
+// ========== 商品系列管理（仿标签管理） ==========
+function showSeriesManager() {
+    const section = document.getElementById('series-manager-section');
+    if (!section) return;
+    section.style.display = 'block';
+    document.getElementById('add-product-form').style.display = 'none';
+    const productGrid = document.getElementById('product-grid');
+    if (productGrid) productGrid.style.display = 'none';
+    const emptyMessage = document.querySelector('#products .flex.flex-col.items-center.justify-center');
+    if (emptyMessage) emptyMessage.style.display = 'none';
+}
+
+function hideSeriesManager() {
+    const section = document.getElementById('series-manager-section');
+    if (section) section.style.display = 'none';
+    const productGrid = document.getElementById('product-grid');
+    if (productGrid) {
+        productGrid.style.display = 'block';
+        applyProductSeriesCollapseState();
+    }
+    const emptyMessage = document.querySelector('#products .flex.flex-col.items-center.justify-center');
+    if (emptyMessage) emptyMessage.style.display = 'flex';
+}
+
+function escapeHtmlSeries(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+function getSeriesPositionFromItem(item) {
+    try {
+        const series = JSON.parse(decodeURIComponent(item.getAttribute('data-series') || ''));
+        return parseInt(series.position, 10) || 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+function sortSeriesListByPosition() {
+    const list = document.getElementById('existing-series-list');
+    if (!list) return;
+    const items = Array.from(list.querySelectorAll('.series-list-item'));
+    if (items.length < 2) return;
+    items.sort((a, b) => {
+        const posDiff = getSeriesPositionFromItem(a) - getSeriesPositionFromItem(b);
+        if (posDiff !== 0) return posDiff;
+        return (parseInt(a.getAttribute('data-series-id'), 10) || 0) - (parseInt(b.getAttribute('data-series-id'), 10) || 0);
+    });
+    items.forEach(item => list.appendChild(item));
+}
+
+function buildSeriesListItem(series) {
+    const descHtml = series.description
+        ? `<p class="text-xs text-gray-500 mt-1 truncate series-item-desc">${escapeHtmlSeries(series.description)}</p>`
+        : '';
+    const dataSeries = encodeURIComponent(JSON.stringify(series));
+    const inactiveClass = series.active ? '' : ' is-inactive';
+    return `
+        <div class="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg border border-gray-200 hover:shadow-md transition-all duration-200 series-list-item${inactiveClass}" data-series-id="${series.id}" data-series="${dataSeries}">
+            <div class="flex items-center min-w-0 flex-1">
+                <div class="w-3 h-3 rounded-full mr-3 flex-shrink-0" style="background: linear-gradient(45deg, #e9967a, #cc9471);"></div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-gray-800 text-base series-item-title m-0">${escapeHtmlSeries(series.title)}</p>
+                    ${descHtml}
+                    <p class="text-xs text-gray-500 mt-1 m-0">
+                        顺序: <span class="series-item-position font-medium text-gray-600">${series.position}</span>
+                    </p>
+                </div>
+            </div>
+            <div class="flex gap-2 flex-shrink-0 ml-3">
+                <button type="button" class="nagisa-btn nagisa-btn-mini series-edit-btn" style="background: linear-gradient(45deg, #f59e0b, #d97706);">
+                    <i class="fas fa-edit mr-1"></i>编辑
+                </button>
+                <button type="button" onclick="openDeleteSeriesModal(${series.id}, this.closest('.series-list-item').querySelector('.series-item-title').textContent.trim())" class="nagisa-btn-danger nagisa-btn-mini">
+                    <i class="fas fa-trash mr-1"></i>删除
+                </button>
+            </div>
+        </div>`;
+}
+
+function editSeriesFromBtn(btn) {
+    try {
+        const item = btn.closest('.series-list-item');
+        const raw = item.getAttribute('data-series');
+        const series = JSON.parse(decodeURIComponent(raw));
+        editSeries(series);
+    } catch (e) {
+        showToast('无法打开编辑', 'error');
+    }
+}
+
+document.addEventListener('click', function(e) {
+    const editBtn = e.target.closest('.series-edit-btn');
+    if (editBtn) {
+        e.preventDefault();
+        editSeriesFromBtn(editBtn);
+    }
+});
+
+function removeSeriesEmptyPlaceholder() {
+    const placeholder = document.querySelector('#existing-series-list .series-empty-placeholder');
+    if (placeholder) placeholder.remove();
+}
+
+function refreshProductSeriesSelect() {
+    const select = document.getElementById('product_series_id');
+    const list = document.getElementById('existing-series-list');
+    if (!select || !list) return;
+
+    sortSeriesListByPosition();
+    const current = select.value;
+    const items = Array.from(list.querySelectorAll('.series-list-item')).sort((a, b) => {
+        const posDiff = getSeriesPositionFromItem(a) - getSeriesPositionFromItem(b);
+        if (posDiff !== 0) return posDiff;
+        return (parseInt(a.getAttribute('data-series-id'), 10) || 0) - (parseInt(b.getAttribute('data-series-id'), 10) || 0);
+    });
+    let html = '<option value="">— 未分类 —</option>';
+    items.forEach(item => {
+        const id = item.getAttribute('data-series-id');
+        const title = item.querySelector('.series-item-title')?.textContent.trim() || '';
+        if (id && title) {
+            const sel = current === id ? ' selected' : '';
+            html += `<option value="${id}"${sel}>${escapeHtmlSeries(title)}</option>`;
+        }
+    });
+    select.innerHTML = html;
+}
+
+function addNewSeries() {
+    const title = document.getElementById('new-series-name').value.trim();
+    const description = document.getElementById('new-series-description').value.trim();
+    const position = parseInt(document.getElementById('new-series-position').value, 10) || 0;
+    const active = document.getElementById('new-series-active').checked ? 1 : 0;
+
+    if (!title) {
+        showToast('系列名称不能为空！', 'error');
+        return;
+    }
+
+    const existing = document.querySelectorAll('#existing-series-list .series-item-title');
+    for (let i = 0; i < existing.length; i++) {
+        if (existing[i].textContent.trim().toLowerCase() === title.toLowerCase()) {
+            showToast('商品系列名称已存在！', 'error');
+            return;
+        }
+    }
+
+    fetch('ajax_shopcar_series.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `action=create&title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}&position=${position}&active=${active}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.series) {
+            removeSeriesEmptyPlaceholder();
+            document.getElementById('existing-series-list').insertAdjacentHTML('beforeend', buildSeriesListItem(data.series));
+            sortSeriesListByPosition();
+            document.getElementById('new-series-name').value = '';
+            document.getElementById('new-series-description').value = '';
+            document.getElementById('new-series-position').value = '0';
+            document.getElementById('new-series-active').checked = true;
+            showToast('商品系列添加成功！');
+            refreshProductSeriesSelect();
+        } else {
+            showToast(data.message || '添加失败', 'error');
+        }
+    })
+    .catch(() => showToast('添加失败，请检查网络连接', 'error'));
+}
+
+function editSeries(series) {
+    document.getElementById('edit-series-id').value = series.id;
+    document.getElementById('edit-series-name').value = series.title || '';
+    document.getElementById('edit-series-description').value = series.description || '';
+    document.getElementById('edit-series-position').value = series.position ?? 0;
+    document.getElementById('edit-series-active').checked = series.active == 1;
+    document.getElementById('edit-series-modal').style.display = 'flex';
+    setTimeout(() => {
+        document.getElementById('edit-series-name').focus();
+        document.getElementById('edit-series-name').select();
+    }, 100);
+}
+
+function closeEditSeriesModal() {
+    document.getElementById('edit-series-modal').style.display = 'none';
+}
+
+function saveSeriesEdit() {
+    const id = document.getElementById('edit-series-id').value;
+    const title = document.getElementById('edit-series-name').value.trim();
+    const description = document.getElementById('edit-series-description').value.trim();
+    const position = parseInt(document.getElementById('edit-series-position').value, 10) || 0;
+    const active = document.getElementById('edit-series-active').checked ? 1 : 0;
+
+    if (!title) {
+        showToast('系列名称不能为空！', 'error');
+        return;
+    }
+
+    fetch('ajax_shopcar_series.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `action=update&id=${encodeURIComponent(id)}&title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}&position=${position}&active=${active}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.series) {
+            const card = document.querySelector(`#existing-series-list .series-list-item[data-series-id="${id}"]`);
+            if (card) {
+                card.outerHTML = buildSeriesListItem(data.series);
+            }
+            sortSeriesListByPosition();
+            showToast('商品系列已更新！');
+            refreshProductSeriesSelect();
+            closeEditSeriesModal();
+        } else {
+            showToast(data.message || '更新失败', 'error');
+        }
+    })
+    .catch(() => showToast('更新失败，请检查网络连接', 'error'));
+}
+
+function openDeleteSeriesModal(id, title) {
+    document.getElementById('delete-series-id').value = id;
+    document.getElementById('delete-series-display-name').textContent = title;
+    document.getElementById('delete-series-modal').style.display = 'flex';
+}
+
+function closeDeleteSeriesModal() {
+    document.getElementById('delete-series-modal').style.display = 'none';
+}
+
+function confirmDeleteSeries() {
+    const id = document.getElementById('delete-series-id').value;
+    const card = document.querySelector(`#existing-series-list .series-list-item[data-series-id="${id}"]`);
+
+    fetch('ajax_shopcar_series.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `action=delete&id=${encodeURIComponent(id)}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            if (card) card.remove();
+            const list = document.getElementById('existing-series-list');
+            if (list && !list.querySelector('.series-list-item')) {
+                list.innerHTML = `<div class="text-center py-8 text-gray-500 series-empty-placeholder">
+                    <i class="fas fa-tags text-4xl mb-3"></i><p>暂无商品系列，请添加</p></div>`;
+            }
+            showToast('商品系列已删除！');
+            refreshProductSeriesSelect();
+            closeDeleteSeriesModal();
+        } else {
+            showToast(data.message || '删除失败', 'error');
+        }
+    })
+    .catch(() => showToast('删除失败，请检查网络连接', 'error'));
+}
+
 // 编辑商品
-function editProduct(id, title, price, description, link, position, status, image) {
+function editProduct(id, title, price, description, link, position, status, image, seriesId) {
     // 验证数据
     if (!title) {
         showToast('商品标题获取失败', 'error');
@@ -4143,6 +4850,10 @@ function editProduct(id, title, price, description, link, position, status, imag
     document.getElementById('product_link').value = link || '';
     document.getElementById('product_position').value = position || '0';
     document.getElementById('product_active').checked = status === '1';
+    const seriesSelect = document.getElementById('product_series_id');
+    if (seriesSelect) {
+        seriesSelect.value = seriesId && seriesId !== '0' ? String(seriesId) : '';
+    }
     document.getElementById('product_image_old').value = image; // 存储原始图片路径，不带../前缀
     
     // 设置文件名提示（如果有的话）
@@ -4189,6 +4900,9 @@ function editProduct(id, title, price, description, link, position, status, imag
     
     const activeInput = document.getElementById('product_active');
     if (activeInput) activeInput.name = 'edit_product_active';
+
+    const seriesSelectEdit = document.getElementById('product_series_id');
+    if (seriesSelectEdit) seriesSelectEdit.name = 'edit_product_series_id';
     
     if (fileInput) fileInput.name = 'edit_product_image';
     
@@ -4737,6 +5451,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_product_status
     }
 }
 
+if ($shopProductFlash) {
+    showToast($shopProductFlash['message'], $shopProductFlash['type'] ?? 'success');
+}
+
 // 引入管理后台页脚
 require_once 'admin_footer.php';
-?>

@@ -2,14 +2,18 @@
 
 // 获取数据库连接
 require_once __DIR__ . '/../includes/database.php';
+require_once __DIR__ . '/../includes/schedule_helpers.php';
 $db = new Database();
 $conn = $db->getConnection();
+
+// 每周一首次访问时自动关闭旧周表（手动开关可在本周内强制重新显示）
+schedule_run_weekly_auto_close($conn);
 
 // 获取最新周表图片（仅获取设置为可见的）
 $stmt = $conn->prepare("SELECT * FROM schedule_image WHERE is_visible = 1 ORDER BY id DESC LIMIT 1");
 $stmt->execute();
 $schedule_image = $stmt->fetch(PDO::FETCH_ASSOC);
-// 路径（相对web根）的数据库字段
+
 $schedule_image_path = $schedule_image['image_path'] ?? '';
 
 // 只有在有路径且服务器上实际存在该文件时才让前端尝试加载图片（避免出现损坏图标）
@@ -30,4 +34,4 @@ if (!empty($schedule_image_path)) {
         </div>
         <div id="schedule-image-data" data-image="<?php echo htmlspecialchars($schedule_image_path); ?>" style="display:none;"></div>
     <?php endif; ?>
-</div> 
+</div>

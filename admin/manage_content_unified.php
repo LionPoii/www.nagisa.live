@@ -226,8 +226,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 
                 $relative_path = 'assets/uploads/schedule/' . $new_filename;
                 
-                // 保存图片路径到数据库
-                $stmt = $conn->prepare("INSERT INTO schedule_image (image_path) VALUES (?)");
+                // 保存图片路径到数据库（新上传的周表默认开启显示，直至下周一自动关闭）
+                $stmt = $conn->prepare("INSERT INTO schedule_image (image_path, is_visible) VALUES (?, 1)");
                 $stmt->execute([$relative_path]);
                 
                 showToast('周表已更新！');
@@ -439,10 +439,17 @@ if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     }
 }
 
+require_once __DIR__ . '/../includes/schedule_helpers.php';
+
+schedule_run_weekly_auto_close($conn);
+
 // 获取当前周表图片
-$stmt = $conn->prepare("SELECT id, image_path, is_visible FROM schedule_image ORDER BY id DESC LIMIT 1");
+$stmt = $conn->prepare("SELECT id, image_path, is_visible, created_at FROM schedule_image ORDER BY id DESC LIMIT 1");
 $stmt->execute();
 $schedule_image = $stmt->fetch(PDO::FETCH_ASSOC);
+$schedule_week_expired = $schedule_image
+    && !(int) ($schedule_image['is_visible'] ?? 0)
+    && !schedule_is_uploaded_in_current_week($schedule_image['created_at'] ?? null);
 $current_schedule_image = $schedule_image['image_path'] ?? '';
 $schedule_visible = $schedule_image['is_visible'] ?? 1;
 $schedule_id = $schedule_image['id'] ?? 0;
@@ -1130,7 +1137,7 @@ include 'admin_header.php';
                 <h2 class="nagisa-card-header">周表管理</h2>
                 <div class="p-6">
                     <p class="mb-6 text-gray-600">
-                        上传和管理直播周表图片，将显示在网站的黑板位置上。
+                        上传和管理直播周表图片，将显示在网站的黑板位置上。每周一 00:00 起会自动关闭上周周表；上传新图片会自动开启显示，也可通过开关手动开启旧图。
                     </p>
                     
                     <!-- 当前周表图片 -->
@@ -1147,6 +1154,11 @@ include 'admin_header.php';
                             <?php endif; ?>
                         </div>
                         <?php if ($current_schedule_image): ?>
+                        <?php if ($schedule_week_expired): ?>
+                        <p class="mt-2 text-sm text-amber-600">
+                            <i class="fas fa-info-circle mr-1"></i>本周周表已自动关闭（每周一重置）。可上传新图片，或通过上方开关手动开启显示旧图。
+                        </p>
+                        <?php endif; ?>
                         <div class="flex justify-between items-center mt-2">
                             <div>
                                 <label class="switch">
