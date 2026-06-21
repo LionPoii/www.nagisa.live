@@ -679,6 +679,46 @@ class BilibiliDynamic {
     }
     
     /**
+     * 读取上次成功抓到的置顶周表图片 URL（API 失败时回退）
+     */
+    private function getCachedPinnedScheduleImageUrl(): string {
+        try {
+            require_once __DIR__ . '/database.php';
+            $db = new Database();
+            $conn = $db->getConnection();
+            $stmt = $conn->prepare("SELECT config_value FROM site_config WHERE config_key = 'pinned_schedule_image_url'");
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            return ($row && $row['config_value'] !== '') ? (string) $row['config_value'] : '';
+        } catch (Exception $e) {
+            return '';
+        }
+    }
+
+    /**
+     * 缓存最新置顶周表图片 URL
+     */
+    private function saveCachedPinnedScheduleImageUrl(string $url): void {
+        if ($url === '') {
+            return;
+        }
+
+        try {
+            require_once __DIR__ . '/database.php';
+            $db = new Database();
+            $conn = $db->getConnection();
+            $stmt = $conn->prepare(
+                "INSERT INTO site_config (config_key, config_value) VALUES ('pinned_schedule_image_url', ?)
+                 ON DUPLICATE KEY UPDATE config_value = ?"
+            );
+            $stmt->execute([$url, $url]);
+        } catch (Exception $e) {
+            // 忽略缓存写入失败
+        }
+    }
+
+    /**
      * 获取置顶动态的第一张图片 URL（周表用，始终走 feed/space 拉最新）
      *
      * @param int|string $mid B 站用户 mid
@@ -686,12 +726,24 @@ class BilibiliDynamic {
      */
     public function getPinnedDynamicFirstImageUrl($mid) {
         if (!$this->hasBilibiliCookie()) {
-            return '';
+            return $this->getCachedPinnedScheduleImageUrl();
         }
 
-        $result = $this->fetchFeedSpacePage($mid, 1, 20);
+        $result = null;
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            if ($attempt > 0) {
+                usleep(300000);
+            }
+
+            $result = $this->fetchFeedSpacePage($mid, 1, 20);
+            if ($this->isValidDynamicResponse($result)) {
+                break;
+            }
+            $result = null;
+        }
+
         if (!$this->isValidDynamicResponse($result)) {
-            return '';
+            return $this->getCachedPinnedScheduleImageUrl();
         }
 
         foreach ($result['data']['items'] as $item) {
@@ -702,11 +754,12 @@ class BilibiliDynamic {
 
             $processed = $this->processDynamic($item);
             if (!empty($processed['images'][0])) {
+                $this->saveCachedPinnedScheduleImageUrl($processed['images'][0]);
                 return $processed['images'][0];
             }
         }
 
-        return '';
+        return $this->getCachedPinnedScheduleImageUrl();
     }
 
     /**

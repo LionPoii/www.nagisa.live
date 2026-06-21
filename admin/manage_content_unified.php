@@ -447,9 +447,9 @@ schedule_run_weekly_auto_close($conn);
 $stmt = $conn->prepare("SELECT id, image_path, is_visible, created_at FROM schedule_image ORDER BY id DESC LIMIT 1");
 $stmt->execute();
 $schedule_image = $stmt->fetch(PDO::FETCH_ASSOC);
-$schedule_week_expired = $schedule_image
-    && !(int) ($schedule_image['is_visible'] ?? 0)
-    && !schedule_is_uploaded_in_current_week($schedule_image['created_at'] ?? null);
+$schedule_is_current_week = $schedule_image
+    ? schedule_is_uploaded_in_current_week($schedule_image['created_at'] ?? null)
+    : false;
 $current_schedule_image = $schedule_image['image_path'] ?? '';
 $schedule_visible = $schedule_image['is_visible'] ?? 1;
 $schedule_id = $schedule_image['id'] ?? 0;
@@ -733,6 +733,32 @@ $extra_styles = '
     margin-bottom: 20px;
 }
 
+.schedule-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.schedule-status-badge.is-visible {
+    background: rgba(34, 197, 94, 0.12);
+    color: #15803d;
+}
+
+.schedule-status-badge.is-hidden {
+    background: rgba(251, 191, 36, 0.18);
+    color: #b45309;
+}
+
+.schedule-status-badge.is-manual {
+    background: rgba(59, 130, 246, 0.12);
+    color: #1d4ed8;
+}
+
 .schedule-image-container img {
     max-width: 100%;
     height: auto;
@@ -751,6 +777,12 @@ $extra_styles = '
 .schedule-placeholder i {
     font-size: 3rem;
     margin-bottom: 10px;
+}
+
+.schedule-visibility-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 @font-face {
@@ -1137,7 +1169,7 @@ include 'admin_header.php';
                 <h2 class="nagisa-card-header">周表管理</h2>
                 <div class="p-6">
                     <p class="mb-6 text-gray-600">
-                        上传和管理直播周表图片，将显示在网站的黑板位置上。每周一 00:00 起会自动关闭上周周表；上传新图片会自动开启显示，也可通过开关手动开启旧图。
+                        上传和管理直播周表图片，将显示在网站的黑板位置上。
                     </p>
                     
                     <!-- 当前周表图片 -->
@@ -1154,17 +1186,32 @@ include 'admin_header.php';
                             <?php endif; ?>
                         </div>
                         <?php if ($current_schedule_image): ?>
-                        <?php if ($schedule_week_expired): ?>
-                        <p class="mt-2 text-sm text-amber-600">
-                            <i class="fas fa-info-circle mr-1"></i>本周周表已自动关闭（每周一重置）。可上传新图片，或通过上方开关手动开启显示旧图。
-                        </p>
-                        <?php endif; ?>
                         <div class="flex justify-between items-center mt-2">
-                            <div>
+                            <div class="schedule-visibility-row">
+                                <?php if ($schedule_visible): ?>
+                                    <?php if ($schedule_is_current_week): ?>
+                                    <span class="schedule-status-badge is-visible">
+                                        <i class="fas fa-check-circle"></i>前台显示中
+                                    </span>
+                                    <?php else: ?>
+                                    <span class="schedule-status-badge is-manual">
+                                        <i class="fas fa-hand-pointer"></i>手动开启
+                                    </span>
+                                    <?php endif; ?>
+                                <?php elseif (!$schedule_is_current_week): ?>
+                                    <span class="schedule-status-badge is-hidden">
+                                        <i class="fas fa-eye-slash"></i>已自动关停
+                                    </span>
+                                <?php else: ?>
+                                    <span class="schedule-status-badge is-hidden">
+                                        <i class="fas fa-eye-slash"></i>前台已关闭
+                                    </span>
+                                <?php endif; ?>
                                 <label class="switch">
                                     <input type="checkbox" id="schedule_visibility" <?php echo $schedule_visible ? 'checked' : ''; ?>>
                                     <span class="slider round"></span>
                                 </label>
+                                <span class="text-sm text-gray-700">前台显示</span>
                             </div>
                             <form method="POST" onsubmit="return confirm('确定要删除当前周表图片吗？此操作不可撤销！');">
                                 <button type="submit" name="delete_schedule_image" class="nagisa-btn-danger">

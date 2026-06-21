@@ -36,10 +36,10 @@ function schedule_is_uploaded_in_current_week(?string $createdAt): bool
     return $uploaded >= schedule_get_current_week_monday();
 }
 
-function schedule_get_last_auto_close_week(PDO $conn): ?string
+function schedule_get_config(PDO $conn, string $key): ?string
 {
-    $stmt = $conn->prepare("SELECT config_value FROM site_config WHERE config_key = 'schedule_last_auto_close_week'");
-    $stmt->execute();
+    $stmt = $conn->prepare('SELECT config_value FROM site_config WHERE config_key = ?');
+    $stmt->execute([$key]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row || $row['config_value'] === '') {
@@ -49,15 +49,24 @@ function schedule_get_last_auto_close_week(PDO $conn): ?string
     return (string) $row['config_value'];
 }
 
-function schedule_set_last_auto_close_week(PDO $conn, string $weekKey): void
+function schedule_set_config(PDO $conn, string $key, string $value): void
 {
     $stmt = $conn->prepare(
-        "INSERT INTO site_config (config_key, config_value) VALUES ('schedule_last_auto_close_week', ?)
+        "INSERT INTO site_config (config_key, config_value) VALUES (?, ?)
          ON DUPLICATE KEY UPDATE config_value = ?"
     );
-    $stmt->execute([$weekKey, $weekKey]);
+    $stmt->execute([$key, $value, $value]);
 }
 
+function schedule_get_last_auto_close_week(PDO $conn): ?string
+{
+    return schedule_get_config($conn, 'schedule_last_auto_close_week');
+}
+
+function schedule_set_last_auto_close_week(PDO $conn, string $weekKey): void
+{
+    schedule_set_config($conn, 'schedule_last_auto_close_week', $weekKey);
+}
 /**
  * 每周一首次访问时自动关闭非本周上传的周表；同一自然周内不再重复执行，手动开关可覆盖。
  *
