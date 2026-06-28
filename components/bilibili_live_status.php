@@ -489,6 +489,7 @@ function setupLiveStatusChecker() {
         is_living: <?php echo $isLiving ? 'true' : 'false'; ?>,
         title: <?php echo json_encode($title); ?>
     };
+    let isFirstLiveCheck = true;
     
     // 检测间隔（毫秒）- 每2秒检查一次（与通知权限无关，始终更新 UI）
     const checkInterval = 2000;
@@ -512,19 +513,22 @@ function setupLiveStatusChecker() {
             if (xhr.status >= 200 && xhr.status < 300) {
                 try {
                     const response = JSON.parse(xhr.responseText);
+                    const statusChanged = response.is_living !== currentStatus.is_living
+                        || response.title !== currentStatus.title;
                     
-                    // 检查状态是否变化
-                    if (response.is_living !== currentStatus.is_living || response.title !== currentStatus.title) {
+                    // 首次轮询也要派发事件，便于「已在直播时首次进入」触发开播播报
+                    if (statusChanged || isFirstLiveCheck) {
                         // 更新当前状态
                         currentStatus = {
                             is_living: response.is_living,
                             title: response.title
                         };
                         
-                        // 更新UI
-                        updateLiveStatusUI(response.is_living);
-                        
-                        console.log('直播状态已更新:', response.is_living ? '在线' : '离线');
+                        // 状态变化时更新 UI（首次若与 SSR 一致则跳过 DOM 写入）
+                        if (statusChanged) {
+                            updateLiveStatusUI(response.is_living);
+                            console.log('直播状态已更新:', response.is_living ? '在线' : '离线');
+                        }
                         
                         // 触发自定义事件，通知其他组件直播状态已更新
                         const event = new CustomEvent('liveStatusChanged', { 
@@ -532,11 +536,14 @@ function setupLiveStatusChecker() {
                                 is_living: response.is_living,
                                 title: response.title,
                                 room_id: response.room_id,
-                                cover_url: response.cover_url
+                                cover_url: response.cover_url,
+                                is_initial: isFirstLiveCheck
                             } 
                         });
                         document.dispatchEvent(event);
                     }
+                    
+                    isFirstLiveCheck = false;
                 } catch (e) {
                     console.error('解析直播状态响应失败:', e);
                 }

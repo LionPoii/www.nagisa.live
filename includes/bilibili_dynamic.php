@@ -8,6 +8,8 @@
 require_once __DIR__ . '/bilibili_rich_text.php';
 
 class BilibiliDynamic {
+    public const DISPLAY_COUNT = 18;
+
     private $headers;
     private $cache_dir;
     private $log_dir;
@@ -26,7 +28,7 @@ class BilibiliDynamic {
             'Accept-Language: zh-CN,zh;q=0.9,en;q=0.8'
         ];
         
-        $this->cache_time = 10;
+        $this->cache_time = 300;
         
         // 设置API日志目录
         $this->log_dir = __DIR__ . '/../logs';
@@ -138,7 +140,8 @@ class BilibiliDynamic {
             && isset($result['code'])
             && $result['code'] === 0
             && isset($result['data']['items'])
-            && is_array($result['data']['items']);
+            && is_array($result['data']['items'])
+            && count($result['data']['items']) > 0;
     }
     
     /**
@@ -197,6 +200,126 @@ class BilibiliDynamic {
         ];
         
         return $result;
+    }
+
+    /**
+     * 分页拉取 feed/all，直到凑够目标条数或无更多数据
+     *
+     * @param int $mid 用户ID
+     * @param int $target_count 目标条数
+     * @param array $seed_items 已有动态（如 feed/space 首批结果）
+     * @return array|null
+     */
+    private function fetchFeedAllAccumulated($mid, $target_count, $seed_items = []) {
+        return $this->fetchFeedAccumulated(
+            'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all',
+            $mid,
+            $target_count,
+            $seed_items
+        );
+    }
+
+    /**
+     * 分页拉取 feed/space，直到凑够目标条数或无更多数据
+     *
+     * @param int $mid 用户ID
+     * @param int $target_count 目标条数
+     * @return array|null
+     */
+    private function fetchFeedSpaceAccumulated($mid, $target_count) {
+        return $this->fetchFeedAccumulated(
+            'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space',
+            $mid,
+            $target_count
+        );
+    }
+
+    /**
+     * 分页拉取动态 feed 接口
+     *
+     * @param string $api_url feed 接口地址
+     * @param int $mid 用户ID
+     * @param int $target_count 目标条数
+     * @param array $seed_items 已有动态
+     * @return array|null
+     */
+    private function fetchFeedAccumulated($api_url, $mid, $target_count, $seed_items = []) {
+        $all_items = [];
+        $seen = [];
+
+        foreach ($seed_items as $item) {
+            $id = $item['id_str'] ?? '';
+            if ($id !== '' && !isset($seen[$id])) {
+                $seen[$id] = true;
+                $all_items[] = $item;
+            }
+        }
+
+        $offset = '';
+        $page_num = 1;
+        $base_result = null;
+        $has_more = false;
+
+        for ($i = 0; $i < 5 && count($all_items) < $target_count; $i++) {
+            $remaining = $target_count - count($all_items);
+            $params = [
+                'host_mid' => $mid,
+                'offset' => $offset,
+                'page' => $page_num,
+                'features' => 'itemOpusStyle',
+                'timezone_offset' => -480,
+                'page_size' => min($remaining, 30),
+            ];
+
+            $this->applyRequestHeaders($mid);
+            $result = $this->httpGet($api_url, $params);
+
+            if (!is_array($result) || ($result['code'] ?? -1) !== 0 || !isset($result['data']['items']) || !is_array($result['data']['items'])) {
+                break;
+            }
+
+            if (empty($result['data']['items'])) {
+                break;
+            }
+
+            if ($base_result === null) {
+                $base_result = $result;
+            }
+
+            foreach ($result['data']['items'] as $item) {
+                $id = $item['id_str'] ?? '';
+                if ($id !== '' && !isset($seen[$id])) {
+                    $seen[$id] = true;
+                    $all_items[] = $item;
+                }
+            }
+
+            $has_more = !empty($result['data']['has_more']);
+            if (count($all_items) >= $target_count || !$has_more) {
+                break;
+            }
+
+            $offset = $result['data']['offset'] ?? '';
+            $page_num++;
+        }
+
+        if (empty($all_items)) {
+            return null;
+        }
+
+        if ($base_result === null) {
+            $base_result = [
+                'code' => 0,
+                'data' => [
+                    'items' => [],
+                    'has_more' => false,
+                ],
+            ];
+        }
+
+        $base_result['data']['items'] = array_slice($all_items, 0, $target_count);
+        $base_result['data']['has_more'] = $has_more;
+        return $base_result;
     }
 
     /**
@@ -359,7 +482,9 @@ class BilibiliDynamic {
      * @return void
      */
     private function saveApiResponse($data, $mid, $page) {
-        if (empty($data)) return;
+        if (empty($data) || empty($data['data']['items']) || !is_array($data['data']['items'])) {
+            return;
+        }
         
         $save_dir = __DIR__ . '/../api/api_cache/dynamic_api/';
         if (!is_dir($save_dir)) {
@@ -418,7 +543,8 @@ class BilibiliDynamic {
             $cached = json_decode(file_get_contents($latest_file), true);
             
             if ($this->isValidDynamicResponse($cached)) {
-                if (!$force_refresh && (time() - filemtime($latest_file)) <= $this->cache_time) {
+                $cached_count = count($cached['data']['items']);
+                if (!$force_refresh && (time() - filemtime($latest_file)) <= $this->cache_time && $cached_count >= $page_size) {
                     $this->logApiCall("[CACHE HIT]", $mid, $page);
                     return $cached;
                 }
@@ -435,7 +561,7 @@ class BilibiliDynamic {
             $result = null;
 
             if ($this->hasBilibiliCookie()) {
-                $result = $this->fetchFeedSpacePage($mid, $page, $page_size);
+                $result = $this->fetchFeedSpaceAccumulated($mid, $page_size);
                 if ($this->isValidDynamicResponse($result)) {
                     $this->saveApiResponse($result, $mid, $page);
                     $this->logApiCall("[CACHE WRITE space]", $mid, $page);
@@ -444,7 +570,7 @@ class BilibiliDynamic {
                 $this->logApiCall("[SPACE FEED FAILED, fallback all]", $mid, $page);
             }
 
-            $result = $this->fetchFeedAllPage($mid, $page, $page_size);
+            $result = $this->fetchFeedAllAccumulated($mid, $page_size);
             
             $this->logApiCall("[API RESP] CODE:" . ($result['code'] ?? 'unknown'), $mid, $page);
             
@@ -769,45 +895,50 @@ class BilibiliDynamic {
      * @param int $page 页码
      * @param int $page_size 每页大小
      * @param bool $force_refresh 是否强制刷新，不使用缓存
+     * @param bool $exclude_pinned 是否排除置顶动态
      * @return array 处理后的动态列表
      */
-    public function getProcessedDynamics($mid, $page = 1, $page_size = 30, $force_refresh = false) {
-        // 记录请求开始时间
+    public function getProcessedDynamics($mid, $page = 1, $page_size = 30, $force_refresh = false, $exclude_pinned = false) {
         $start_time = microtime(true);
-        
-        // 获取API数据
-        $result = $this->getUserDynamics($mid, $page, $page_size, $force_refresh);
-        
-        // 记录API请求耗时
+        $dynamics = [];
+        $raw_fetch_size = $page_size + ($exclude_pinned ? 6 : 0);
+
+        for ($attempt = 0; $attempt < 4 && count($dynamics) < $page_size; $attempt++) {
+            $current_fetch = min($raw_fetch_size + ($attempt * 12), 60);
+            $should_force = $force_refresh || $attempt > 0;
+            $result = $this->getUserDynamics($mid, $page, $current_fetch, $should_force);
+
+            if (empty($result) || !isset($result['data']['items']) || !is_array($result['data']['items'])) {
+                break;
+            }
+
+            $dynamics = [];
+            foreach ($result['data']['items'] as $dynamic) {
+                if (isset($dynamic['type']) && $dynamic['type'] === 'DYNAMIC_TYPE_LIVE_RCMD') {
+                    continue;
+                }
+
+                $processed = $this->processDynamic($dynamic);
+                if ($exclude_pinned && !empty($processed['is_pinned'])) {
+                    continue;
+                }
+
+                $dynamics[] = $processed;
+                if (count($dynamics) >= $page_size) {
+                    break;
+                }
+            }
+        }
+
         $api_time = microtime(true) - $start_time;
         $this->logApiCall("[API REQUEST TIME] " . round($api_time * 1000) . "ms", $mid, $page);
-        
-        if (empty($result) || !isset($result['data']['items']) || !is_array($result['data']['items'])) {
-            $this->logApiCall("[PROCESS DYNAMICS FAILED] Empty or invalid result", $mid, $page);
-            return [];
-        }
-        
-        // 记录原始动态数量
-        $original_count = count($result['data']['items']);
-        $this->logApiCall("[ORIGINAL DYNAMICS] Count:" . $original_count, $mid, $page);
-        
-        $dynamics = [];
-        foreach ($result['data']['items'] as $dynamic) {
-            // 过滤掉DYNAMIC_TYPE_LIVE_RCMD类型的动态
-            if (isset($dynamic['type']) && $dynamic['type'] === 'DYNAMIC_TYPE_LIVE_RCMD') {
-                continue;
-            }
-            
-            $dynamics[] = $this->processDynamic($dynamic);
-        }
-        
-        // 记录处理后动态数量和总处理时间
-        $total_time = microtime(true) - $start_time;
-        $this->logApiCall("[PROCESSED DYNAMICS] Count:" . count($dynamics) . " Total Time:" . round($total_time * 1000) . "ms", $mid, $page);
-        
-        // 记录缓存时间设置
+        $this->logApiCall("[PROCESSED DYNAMICS] Count:" . count($dynamics) . " Total Time:" . round($api_time * 1000) . "ms", $mid, $page);
         $this->logApiCall("[CACHE TIME] " . $this->cache_time . "s", $mid, $page);
-        
+
+        if ($page_size > 0 && count($dynamics) > $page_size) {
+            $dynamics = array_slice($dynamics, 0, $page_size);
+        }
+
         return $dynamics;
     }
     

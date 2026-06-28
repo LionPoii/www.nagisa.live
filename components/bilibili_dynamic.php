@@ -107,6 +107,9 @@ try {
 
 $biliDynamic = new BilibiliDynamic();
 
+// 首页展示条数
+$dynamic_display_count = BilibiliDynamic::DISPLAY_COUNT;
+
 // 获取动态列表
 $max_retries = 3;
 $retry_count = 0;
@@ -117,20 +120,19 @@ while ($retry_count < $max_retries && empty($dynamics)) {
         sleep(1); // 延迟1秒后重试
     }
     
-    $dynamics = $biliDynamic->getProcessedDynamics($mid, 1, 12, $force_refresh); // 获取前12条动态，传入强制刷新参数
+    $dynamics = $biliDynamic->getProcessedDynamics(
+        $mid,
+        1,
+        $dynamic_display_count,
+        $force_refresh,
+        !$show_pinned
+    );
     $retry_count++;
     
     // 记录重试日志
     if (empty($dynamics) && $retry_count < $max_retries) {
         file_put_contents($log_file, date('Y-m-d H:i:s') . " [RETRY] 动态获取重试 #$retry_count\n", FILE_APPEND);
     }
-}
-
-// 如果不显示置顶动态，过滤掉置顶内容
-if (!$show_pinned) {
-    $dynamics = array_filter($dynamics, function($dynamic) {
-        return !$dynamic['is_pinned'];
-    });
 }
 
 // 代理图片处理函数
@@ -198,8 +200,7 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
         <?php if (empty($dynamics)): ?>
             <!-- 无动态时的提示 -->
             <div class="dynamic-empty">
-                <div class="empty-icon">📝</div>
-                <div class="empty-text">暂无动态</div>
+                <div class="empty-text">整理中</div>
             </div>
         <?php else: ?>
             <?php foreach ($dynamics as $index => $dynamic): ?>
@@ -756,18 +757,22 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
 
 /* 空状态样式 */
 .dynamic-empty {
-    text-align: left;
-    padding: 40px 20px;
-    color: rgba(255, 255, 255, 0.6);
-}
-
-.empty-icon {
-    font-size: 48px;
-    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(80vh - 50px - 3vh);
+    width: 100%;
+    text-align: center;
 }
 
 .empty-text {
-    font-size: 16px;
+    font-family: 'QiantuHouhei', sans-serif;
+    font-size: 42px;
+    color: #4D4030;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+    letter-spacing: 0.08em;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 /* 响应式设计 */
@@ -787,6 +792,10 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
         color: #4D4030;
         text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.2);
         font-weight: normal;
+    }
+
+    .empty-text {
+        font-size: 28px;
     }
     
     .dynamic-text {
@@ -982,7 +991,7 @@ function setupAutoRefresh() {
         const xhr = new XMLHttpRequest();
         
         // 构建带有刷新参数的URL，添加时间戳确保不使用缓存
-        const url = window.location.href.split('?')[0] + '?refresh_dynamic=1&_=' + new Date().getTime();
+        const url = window.location.pathname + '?_=' + new Date().getTime();
         
         // 配置请求
         xhr.open('GET', url, true);
@@ -995,19 +1004,26 @@ function setupAutoRefresh() {
         // 处理响应
         xhr.onload = function() {
             if (xhr.status >= 200 && xhr.status < 300) {
-                // 提取动态列表HTML
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(xhr.responseText, 'text/html');
                 const newDynamicList = doc.querySelector('.dynamic-list');
-                
-                // 更新当前页面的动态列表
-                if (newDynamicList) {
-                    const currentDynamicList = document.querySelector('.dynamic-list');
-                    if (currentDynamicList) {
-                        currentDynamicList.innerHTML = newDynamicList.innerHTML;
-                        console.log('动态数据已更新');
-                    }
+                const currentDynamicList = document.querySelector('.dynamic-list');
+
+                if (!newDynamicList || !currentDynamicList) {
+                    return;
                 }
+
+                const hasNewItems = newDynamicList.querySelector('.dynamic-item') !== null;
+                const hasCurrentItems = currentDynamicList.querySelector('.dynamic-item') !== null;
+
+                // API 偶发返回空列表时，保留当前已展示的内容
+                if (!hasNewItems && hasCurrentItems) {
+                    console.warn('刷新未获取到新动态，保留当前内容');
+                    return;
+                }
+
+                currentDynamicList.innerHTML = newDynamicList.innerHTML;
+                console.log('动态数据已更新');
             } else {
                 console.error('刷新动态数据失败:', xhr.statusText);
             }
@@ -1033,8 +1049,6 @@ function setupAutoRefresh() {
         }
     });
     
-    // 初次加载页面时也进行一次刷新
-    setTimeout(refreshDynamics, 1000);
 }
 
 // 全局函数：动态计算并设置B站动态组件位置

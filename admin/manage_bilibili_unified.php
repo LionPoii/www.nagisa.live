@@ -3,6 +3,7 @@ require_once '../includes/auth.php';
 require_once '../includes/database.php';
 require_once '../includes/toast.php';
 require_once '../includes/bilibili_live.php';
+require_once '../includes/bilibili_dynamic.php';
 
 // 检查管理员登录状态
 checkAdminAuth();
@@ -743,6 +744,196 @@ $extra_styles = '
     margin-bottom: 12px;
 }
 
+.nagisa-preview-display.dynamic-preview-display {
+    display: block;
+    align-items: stretch;
+    width: 100%;
+    max-height: min(70vh, 720px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.dynamic-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.dynamic-preview-item {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba(204, 148, 113, 0.18);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: #faf8f6;
+}
+
+.dynamic-preview-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+}
+
+.dynamic-preview-text {
+    font-size: 14px;
+    line-height: 1.65;
+    color: #4a4035;
+    word-break: break-word;
+    white-space: pre-line;
+    margin-bottom: 8px;
+}
+
+.dynamic-preview-text .bili-emote {
+    display: inline-block;
+    vertical-align: middle;
+    max-height: 40px;
+    max-width: 120px;
+    margin: 0 2px;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+}
+
+.dynamic-preview-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+.dynamic-preview-images img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.dynamic-preview-more {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    background: rgba(204, 148, 113, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #704c38;
+}
+
+.dynamic-preview-video {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: rgba(204, 148, 113, 0.08);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.dynamic-preview-video-cover {
+    width: clamp(100px, 32%, 168px);
+    flex-shrink: 0;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+    border-radius: 6px;
+}
+
+.dynamic-preview-video-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.dynamic-preview-video-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a4035;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.dynamic-preview-video-meta {
+    font-size: 12px;
+    color: #8a7a6a;
+    margin-top: 4px;
+}
+
+.dynamic-preview-card {
+    background: rgba(204, 148, 113, 0.08);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.dynamic-preview-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a4035;
+    margin-bottom: 4px;
+}
+
+.dynamic-preview-card-desc {
+    font-size: 12px;
+    color: #8a7a6a;
+    margin-bottom: 8px;
+    word-break: break-word;
+}
+
+.dynamic-preview-card-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 8px;
+    width: 100%;
+}
+
+.dynamic-preview-card-images img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 6px;
+}
+
+.dynamic-preview-time {
+    font-size: 12px;
+    color: #b0a090;
+    margin-top: 6px;
+}
+
+.dynamic-preview-pinned {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #fb7299, #ff9eb5);
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.dynamic-preview-empty {
+    text-align: center;
+    color: #8a7a6a;
+    padding: 24px 12px;
+}
+
+@media (max-width: 640px) {
+    .dynamic-preview-video {
+        flex-direction: column;
+    }
+
+    .dynamic-preview-video-cover {
+        width: 100%;
+    }
+}
+
 .bili-marquee-box { position: relative; overflow: hidden; max-width: 100%; }
 .bili-marquee-content {
     display: inline-block;
@@ -1289,26 +1480,13 @@ include 'admin_header.php';
                     <?php if (!empty($current_mid) && $dynamic_enabled == '1'): ?>
                     <div class="nagisa-preview-container">
                         <h3 class="nagisa-preview-title">动态预览</h3>
-                        <div class="nagisa-preview-display">
-                            <!-- 添加表情样式 -->
-                            <style>
-                            .bili-emote {
-                                display: inline-block;
-                                vertical-align: middle;
-                                max-height: 40px;
-                                max-width: 120px;
-                                margin: 0 2px;
-                                user-select: none;
-                                -webkit-user-select: none;
-                                -moz-user-select: none;
-                            }
-                            </style>
+                        <div class="nagisa-preview-display dynamic-preview-display">
                             <?php
                             // 使用PHP获取动态列表
                             $ch = curl_init();
                             $base_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]";
                             $timestamp = time();
-                            $url = $base_url . "/api/dynamic_api.php?action=get_dynamics&mid=" . urlencode($current_mid) . "&page=1&page_size=10&t=" . $timestamp . "&force=1";
+                            $url = $base_url . "/api/dynamic_api.php?action=get_dynamics&mid=" . urlencode($current_mid) . "&page=1&page_size=" . BilibiliDynamic::DISPLAY_COUNT . "&t=" . $timestamp . "&force=1";
                             curl_setopt($ch, CURLOPT_URL, $url);
                             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -1322,77 +1500,88 @@ include 'admin_header.php';
                             if ($response) {
                                 $data = json_decode($response, true);
                                 if ($data && $data['code'] === 0 && !empty($data['data']['dynamics'])) {
-                                    echo '<div class="space-y-4">';
-                                    foreach ($data['data']['dynamics'] as $dynamic) {
-                                        echo '<div class="border-b border-gray-200 pb-3 last:border-b-0">';
-                                        // 跳转链接（优先视频、否则动态）
+                                    $preview_dynamics = $data['data']['dynamics'];
+                                    echo '<div class="dynamic-preview-list">';
+                                    foreach ($preview_dynamics as $dynamic) {
                                         $jump_url = '';
-                                        if ($dynamic['video'] && !empty($dynamic['video']['bvid'])) {
+                                        if (!empty($dynamic['video']['bvid'])) {
                                             $jump_url = 'https://www.bilibili.com/video/' . htmlspecialchars($dynamic['video']['bvid']);
                                         } elseif (!empty($dynamic['id'])) {
                                             $jump_url = 'https://t.bilibili.com/' . htmlspecialchars($dynamic['id']);
                                         }
+
+                                        echo '<article class="dynamic-preview-item">';
+                                        if (!empty($dynamic['is_pinned'])) {
+                                            echo '<span class="dynamic-preview-pinned">置顶</span>';
+                                        }
                                         if ($jump_url) {
-                                            echo '<a href="' . $jump_url . '" target="_blank" style="text-decoration:none;">';
+                                            echo '<a href="' . $jump_url . '" target="_blank" rel="noopener" class="dynamic-preview-link">';
                                         }
-                                        // 文本内容
+
                                         if (!empty($dynamic['content'])) {
-                                            // 直接输出内容，不使用htmlspecialchars转义
-                                            // 确保表情HTML标签被正确解析
-                                            echo '<div class="text-sm text-gray-700 mb-2">' . html_entity_decode($dynamic['content']) . '</div>';
+                                            echo '<div class="dynamic-preview-text">' . html_entity_decode($dynamic['content']) . '</div>';
                                         }
-                                        // 图片内容
+
                                         if (!empty($dynamic['images'])) {
-                                            echo '<div class="flex space-x-2 mb-2">';
-                                            foreach (array_slice($dynamic['images'], 0, 3) as $image) {
-                                                echo '<img src="' . getBiliImageProxyUrl($image) . '" alt="动态图片" class="w-16 h-16 object-cover rounded" referrerpolicy="no-referrer">';
+                                            echo '<div class="dynamic-preview-images">';
+                                            foreach (array_slice($dynamic['images'], 0, 9) as $image) {
+                                                echo '<img src="' . getBiliImageProxyUrl($image) . '" alt="动态图片" referrerpolicy="no-referrer" loading="lazy">';
                                             }
-                                            if (count($dynamic['images']) > 3) {
-                                                echo '<div class="w-16 h-16 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">+' . (count($dynamic['images']) - 3) . '</div>';
+                                            if (count($dynamic['images']) > 9) {
+                                                echo '<div class="dynamic-preview-more">+' . (count($dynamic['images']) - 9) . '</div>';
                                             }
                                             echo '</div>';
                                         }
-                                        // 视频内容
-                                        if ($dynamic['video']) {
-                                            echo '<div class="flex space-x-3 bg-gray-50 p-2 rounded mb-2">';
-                                            echo '<img src="' . getBiliImageProxyUrl($dynamic['video']['cover']) . '" alt="视频封面" class="w-20 h-12 object-cover rounded" referrerpolicy="no-referrer">';
-                                            echo '<div class="flex-1">';
-                                            echo '<div class="text-sm font-medium text-gray-700">' . html_entity_decode($dynamic['video']['title']) . '</div>';
-                                            echo '<div class="text-xs text-gray-500">' . (!empty($dynamic['video']['play']) ? htmlspecialchars($dynamic['video']['play']) : (isset($dynamic['video']['view']) ? (is_numeric($dynamic['video']['view']) ? number_format($dynamic['video']['view']) : htmlspecialchars($dynamic['video']['view'])) : '')) . '播放 · ' . (isset($dynamic['video']['danmaku']) ? htmlspecialchars($dynamic['video']['danmaku']) : '') . '弹幕 · ' . htmlspecialchars($dynamic['video']['duration']) . '</div>';
-                                            echo '</div>';
-                                            echo '</div>';
+
+                                        if (!empty($dynamic['video'])) {
+                                            echo '<div class="dynamic-preview-video">';
+                                            echo '<img src="' . getBiliImageProxyUrl($dynamic['video']['cover']) . '" alt="视频封面" class="dynamic-preview-video-cover" referrerpolicy="no-referrer" loading="lazy">';
+                                            echo '<div class="dynamic-preview-video-info">';
+                                            echo '<div class="dynamic-preview-video-title">' . html_entity_decode($dynamic['video']['title']) . '</div>';
+                                            echo '<div class="dynamic-preview-video-meta">';
+                                            echo (!empty($dynamic['video']['play']) ? htmlspecialchars($dynamic['video']['play']) : (isset($dynamic['video']['view']) ? (is_numeric($dynamic['video']['view']) ? number_format($dynamic['video']['view']) : htmlspecialchars($dynamic['video']['view'])) : ''));
+                                            echo '播放 · ';
+                                            echo (isset($dynamic['video']['danmaku']) ? htmlspecialchars($dynamic['video']['danmaku']) : '0');
+                                            echo '弹幕 · ';
+                                            echo htmlspecialchars($dynamic['video']['duration'] ?? '');
+                                            echo '</div></div></div>';
                                         }
-                                        // 卡片内容
-                                        if ($dynamic['card']) {
-                                            echo '<div class="bg-gray-50 p-2 rounded mb-2">';
-                                            echo '<div class="font-medium text-gray-700">' . html_entity_decode($dynamic['card']['title']) . '</div>';
+
+                                        if (!empty($dynamic['card'])) {
+                                            echo '<div class="dynamic-preview-card">';
+                                            if (!empty($dynamic['card']['title'])) {
+                                                echo '<div class="dynamic-preview-card-title">' . html_entity_decode($dynamic['card']['title']) . '</div>';
+                                            }
                                             if (!empty($dynamic['card']['desc'])) {
-                                                echo '<div class="text-xs text-gray-500 mb-1">' . html_entity_decode($dynamic['card']['desc']) . '</div>';
+                                                echo '<div class="dynamic-preview-card-desc">' . html_entity_decode($dynamic['card']['desc']) . '</div>';
                                             }
                                             if (!empty($dynamic['card']['pics'])) {
-                                                echo '<div class="flex space-x-2">';
-                                                foreach (array_slice($dynamic['card']['pics'], 0, 3) as $image) {
-                                                    echo '<img src="' . getBiliImageProxyUrl($image) . '" alt="卡片图片" class="w-12 h-12 object-cover rounded" referrerpolicy="no-referrer">';
+                                                echo '<div class="dynamic-preview-card-images">';
+                                                foreach (array_slice($dynamic['card']['pics'], 0, 6) as $image) {
+                                                    echo '<img src="' . getBiliImageProxyUrl($image) . '" alt="卡片图片" referrerpolicy="no-referrer" loading="lazy">';
                                                 }
                                                 echo '</div>';
                                             }
                                             echo '</div>';
                                         }
+
                                         if ($jump_url) {
                                             echo '</a>';
                                         }
-                                        // 时间
-                                        echo '<div class="text-xs text-gray-400 mt-2">' . htmlspecialchars($dynamic['time']) . '</div>';
-                                        echo '</div>';
+
+                                        if (!empty($dynamic['time'])) {
+                                            echo '<div class="dynamic-preview-time">' . htmlspecialchars($dynamic['time']) . '</div>';
+                                        }
+                                        echo '</article>';
                                     }
                                     echo '</div>';
                                 } else {
-                                    echo '<div class="text-gray-500">暂无动态数据</div>';
+                                    echo '<div class="dynamic-preview-empty">暂无动态数据</div>';
                                 }
                             } else {
-                                echo '<div class="text-red-500">';
+                                echo '<div class="dynamic-preview-empty" style="color:#b45454;">';
                                 echo '<p>加载失败</p>';
-                                echo '<p>HTTP状态码: ' . $httpCode . '</p>';
+                                echo '<p>HTTP状态码: ' . (int)$httpCode . '</p>';
                                 if ($error) {
                                     echo '<p>CURL错误: ' . htmlspecialchars($error) . '</p>';
                                 }

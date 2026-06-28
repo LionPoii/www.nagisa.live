@@ -130,6 +130,60 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     let lastLiveStatus = null;
+    let liveAnnouncedThisSession = false;
+    try {
+        liveAnnouncedThisSession = sessionStorage.getItem('nagisa_live_announced') === '1';
+    } catch (e) {
+        // sessionStorage 不可用时忽略
+    }
+    
+    function announceLiveStart(data) {
+        if (Notification.permission !== 'granted') {
+            return;
+        }
+        if (!data || !data.is_living || liveAnnouncedThisSession) {
+            return;
+        }
+        
+        playIconAnimation('live');
+        showNotification('直播开始', data.title || '直播已开始', 'live', {
+            url: 'https://live.bilibili.com/' + (data.room_id || ''),
+            image: data.cover_url || null,
+            target: '_blank'
+        });
+        
+        try {
+            sessionStorage.setItem('nagisa_live_announced', '1');
+        } catch (e) {
+            // sessionStorage 不可用时忽略
+        }
+        liveAnnouncedThisSession = true;
+    }
+    
+    function fetchLiveStatusAndAnnounceIfNeeded() {
+        if (Notification.permission !== 'granted' || liveAnnouncedThisSession) {
+            return;
+        }
+        
+        fetch('/api/check_live_status.php?_=' + Date.now())
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (!data || typeof data.is_living === 'undefined') {
+                    return;
+                }
+                
+                if (lastLiveStatus === null) {
+                    lastLiveStatus = !!data.is_living;
+                }
+                
+                if (data.is_living) {
+                    announceLiveStart(data);
+                }
+            })
+            .catch(function() {
+                // 忽略网络错误
+            });
+    }
     
     // 添加点击事件
     notificationToggle.addEventListener('click', function() {
@@ -165,6 +219,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // 仅当状态从未授权变为已授权时，启动检查
                 if (!wasGranted) {
                     startUpdateCheck();
+                    fetchLiveStatusAndAnnounceIfNeeded();
                 }
             } else {
                 notificationIcon.src = '/assets/icon/notice-off.png';
@@ -221,21 +276,28 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        const isLiving = !!data.is_living;
+        
         if (lastLiveStatus === null) {
-            lastLiveStatus = data.is_living;
-            return;
+            // 首次检测：已在直播且本会话尚未播报 → 进入站点时提示一次
+            if (isLiving) {
+                announceLiveStart(data);
+            }
+        } else if (isLiving && !lastLiveStatus) {
+            // 离线 → 开播
+            announceLiveStart(data);
         }
         
-        if (data.is_living && !lastLiveStatus) {
-            playIconAnimation('live');
-            showNotification('直播开始', data.title || '直播已开始', 'live', {
-                url: 'https://live.bilibili.com/' + data.room_id,
-                image: data.cover_url || null,
-                target: '_blank'
-            });
+        if (!isLiving && lastLiveStatus) {
+            try {
+                sessionStorage.removeItem('nagisa_live_announced');
+            } catch (e) {
+                // sessionStorage 不可用时忽略
+            }
+            liveAnnouncedThisSession = false;
         }
         
-        lastLiveStatus = data.is_living;
+        lastLiveStatus = isLiving;
     }
     
     document.addEventListener('liveStatusChanged', handleLiveStatusNotification);
@@ -772,6 +834,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 页面加载时检查通知权限
     checkNotificationPermission();
+    if ('Notification' in window && Notification.permission === 'granted') {
+        fetchLiveStatusAndAnnounceIfNeeded();
+    }
     
     // 定期检查通知权限状态（每30秒）
     setInterval(checkNotificationPermission, 30000);

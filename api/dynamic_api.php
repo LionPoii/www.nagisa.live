@@ -111,7 +111,7 @@ try {
             // 获取动态列表
             $mid = intval($_GET['mid'] ?? 2124647716);
             $page = intval($_GET['page'] ?? 1);
-            $page_size = intval($_GET['page_size'] ?? 10);
+            $page_size = intval($_GET['page_size'] ?? BilibiliDynamic::DISPLAY_COUNT);
             
             // 限制参数范围
             $page = max(1, min($page, 10));
@@ -122,7 +122,20 @@ try {
             $biliDynamic = new BilibiliDynamic();
             // 检查是否需要强制刷新
             $force_refresh = isset($_GET['force']) && $_GET['force'] == '1';
-            $dynamics = $biliDynamic->getProcessedDynamics($mid, $page, $page_size, $force_refresh);
+
+            $exclude_pinned = false;
+            try {
+                $db = new Database();
+                $conn = $db->getConnection();
+                $stmt = $conn->prepare("SELECT config_value FROM site_config WHERE config_key = 'show_pinned'");
+                $stmt->execute();
+                $config = $stmt->fetch(PDO::FETCH_ASSOC);
+                $exclude_pinned = $config ? !(bool)$config['config_value'] : false;
+            } catch (Exception $e) {
+                // 使用默认值
+            }
+
+            $dynamics = $biliDynamic->getProcessedDynamics($mid, $page, $page_size, $force_refresh, $exclude_pinned);
 
             $total = $biliDynamic->getDynamicCount($mid);
             
