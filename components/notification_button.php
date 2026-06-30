@@ -118,16 +118,38 @@ document.addEventListener('DOMContentLoaded', function() {
         toggleContainer.appendChild(notificationBadge);
     }
     
-    // 尝试从localStorage获取上次记录的动态ID
-    let lastDynamicId = null;
-    try {
-        const storedDynamicId = localStorage.getItem('lastDynamicId');
-        if (storedDynamicId) {
-            lastDynamicId = storedDynamicId;
+    // 已见过的动态 ID 集合（用于检测多条新动态）
+    const SEEN_DYNAMIC_IDS_KEY = 'seenDynamicIds';
+    const SEEN_DYNAMIC_IDS_MAX = 30;
+    let seenDynamicIds = new Set();
+    let dynamicNotifyInitialized = false;
+
+    function loadSeenDynamicIds() {
+        try {
+            const stored = localStorage.getItem(SEEN_DYNAMIC_IDS_KEY);
+            if (stored) {
+                JSON.parse(stored).forEach(function(id) {
+                    if (id) seenDynamicIds.add(String(id));
+                });
+                dynamicNotifyInitialized = seenDynamicIds.size > 0;
+            }
+        } catch (e) {
+            // localStorage 不可用时忽略
         }
-    } catch (e) {
-        // localStorage错误处理
     }
+
+    function saveSeenDynamicIds() {
+        try {
+            const ids = Array.from(seenDynamicIds).slice(-SEEN_DYNAMIC_IDS_MAX);
+            seenDynamicIds = new Set(ids);
+            localStorage.setItem(SEEN_DYNAMIC_IDS_KEY, JSON.stringify(ids));
+            localStorage.removeItem('lastDynamicId');
+        } catch (e) {
+            // localStorage 不可用时忽略
+        }
+    }
+
+    loadSeenDynamicIds();
     
     let lastLiveStatus = null;
     let liveAnnouncedThisSession = false;
@@ -337,50 +359,60 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 1000);
     }
     
-    // 检查动态更新
+    // 检查动态更新（支持一次检测多条新动态）
     function checkDynamicUpdates() {
-        // 直接从B站API获取最新动态
         const timestamp = new Date().getTime();
-        
-        // 首先尝试从我们的API获取
+
         fetch(`https://www.nagisa.live/api/check_dynamic_updates.php?t=${timestamp}&force=1`)
-            .then(response => {
-                return response.json();
-            })
+            .then(response => response.json())
             .then(data => {
-                if (data && data.latest_dynamic && data.latest_dynamic.id) {
-                    // 如果是首次检查，只记录ID不显示通知
-                    if (lastDynamicId === null) {
-                        lastDynamicId = data.latest_dynamic.id;
-                    } 
-                    // 如果有新动态且不是首次检查，播放图标动画和显示系统弹窗通知
-                    else if (data.latest_dynamic.id !== lastDynamicId) {
-                        // 播放图标动画
-                        playIconAnimation('dynamic');
-                        
-                        // 同时显示系统弹窗通知
-                        showNotification('动态更新', data.latest_dynamic.text || '有新动态发布', 'dynamic', {
-                            url: data.latest_dynamic.url || 'https://t.bilibili.com/' + data.latest_dynamic.id,
-                            target: '_blank' // 在新标签页中打开
-                        });
-                        
-                        // 更新记录的ID
-                        const oldId = lastDynamicId;
-                        lastDynamicId = data.latest_dynamic.id;
-                        
-                        // 将最新的动态ID存储到localStorage中
-                        try {
-                            localStorage.setItem('lastDynamicId', lastDynamicId);
-                        } catch (e) {
-                            // localStorage错误处理
-                        }
-                    }
-                } else {
-                    // 未获取到有效的动态数据
+                if (!data || !Array.isArray(data.dynamics) || data.dynamics.length === 0) {
+                    return;
                 }
+
+                const currentDynamics = data.dynamics.filter(function(d) {
+                    return d && d.id;
+                });
+
+                // 首次初始化：记录当前列表，不弹通知
+                if (!dynamicNotifyInitialized) {
+                    currentDynamics.forEach(function(d) {
+                        seenDynamicIds.add(String(d.id));
+                    });
+                    dynamicNotifyInitialized = true;
+                    saveSeenDynamicIds();
+                    return;
+                }
+
+                // 找出所有未见过的新动态（API 按时间倒序，反转为从旧到新依次通知）
+                const newDynamics = currentDynamics
+                    .filter(function(d) {
+                        return !seenDynamicIds.has(String(d.id));
+                    })
+                    .reverse();
+
+                if (newDynamics.length === 0) {
+                    return;
+                }
+
+                playIconAnimation('dynamic');
+
+                newDynamics.forEach(function(dynamic, index) {
+                    setTimeout(function() {
+                        showNotification('动态更新', dynamic.text || '有新动态发布', 'dynamic', {
+                            url: dynamic.url || 'https://t.bilibili.com/' + dynamic.id,
+                            target: '_blank'
+                        });
+                    }, index * 400);
+                });
+
+                currentDynamics.forEach(function(d) {
+                    seenDynamicIds.add(String(d.id));
+                });
+                saveSeenDynamicIds();
             })
-            .catch(error => {
-                // 处理错误
+            .catch(function() {
+                // 忽略网络错误
             });
     }
     
@@ -445,7 +477,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         let notificationOptions = {
             body: formattedMessage,
-            requireInteraction: true, // 在Windows上保持通知显示，直到用户交互
             tag: notificationId, // 使用唯一ID作为tag，可以防止某些浏览器重复显示
             silent: false, // 允许通知声音
             badge: '/assets/icon/notice-on.png', // 添加通知徽章
@@ -507,10 +538,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.close();
             };
             
-            // 15秒后自动关闭通知
+            // 20秒后自动关闭通知
             setTimeout(function() {
                 notification.close();
-            }, 15000);
+            }, 20000);
         } catch (error) {
             // 忽略错误
         }
@@ -581,10 +612,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const notification = new Notification(formattedTitle, options);
             
-            // 10秒后自动关闭
+            // 20秒后自动关闭
             setTimeout(function() {
                 notification.close();
-            }, 10000);
+            }, 20000);
         }
     }
     

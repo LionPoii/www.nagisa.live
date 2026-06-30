@@ -102,6 +102,35 @@ try {
             ];
             break;
 
+        case 'toggle_active':
+            $id = intval($_POST['id'] ?? 0);
+            $active = isset($_POST['active']) && $_POST['active'] !== '0' ? 1 : 0;
+
+            if ($id <= 0) {
+                throw new Exception('无效的商品系列');
+            }
+
+            $fetch = $conn->prepare('SELECT id, title, description, position, active FROM shopcar_series WHERE id = ? LIMIT 1');
+            $fetch->execute([$id]);
+            $row = $fetch->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                throw new Exception('商品系列不存在');
+            }
+
+            $stmt = $conn->prepare('UPDATE shopcar_series SET active = ? WHERE id = ?');
+            $stmt->execute([$active, $id]);
+
+            $response['success'] = true;
+            $response['message'] = $active ? '系列已开启前台显示' : '系列已关闭前台显示';
+            $response['series'] = [
+                'id' => $id,
+                'title' => $row['title'],
+                'description' => $row['description'] ?? '',
+                'position' => (int)($row['position'] ?? 0),
+                'active' => $active,
+            ];
+            break;
+
         case 'delete':
             $id = intval($_POST['id'] ?? 0);
             if ($id <= 0) {

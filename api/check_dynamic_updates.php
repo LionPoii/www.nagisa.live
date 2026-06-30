@@ -49,34 +49,39 @@ try {
     
     $response = [
         'success' => true,
+        'dynamics' => [],
         'latest_dynamic' => null,
         'timestamp' => time()
     ];
     
     if (!empty($dynamics)) {
-        // 查找第一个非置顶动态
-        $latest = null;
-        foreach ($dynamics as $dynamic) {
-            if (!$dynamic['is_pinned']) {
-                $latest = $dynamic;
-                break;
-            }
-        }
-        
-        // 如果没有找到非置顶动态，则使用第一条动态（可能是置顶的）
-        if (!$latest && count($dynamics) > 0) {
-            $latest = $dynamics[0];
-        }
-        
-        if ($latest) {
-            $text = isset($latest['content']) ? $latest['content'] : '';
-            
-            $response['latest_dynamic'] = [
-                'id' => $latest['id'],
-                'timestamp' => $latest['timestamp'],
-                'text' => mb_substr(strip_tags($text), 0, 50) . '...', // 截取前50个字符
-                'url' => 'https://t.bilibili.com/' . $latest['id'] // 添加直接访问动态的URL
+        $formatDynamic = function ($dynamic) {
+            $text = isset($dynamic['content']) ? $dynamic['content'] : '';
+            return [
+                'id' => $dynamic['id'],
+                'timestamp' => $dynamic['timestamp'],
+                'text' => mb_substr(strip_tags($text), 0, 50) . (mb_strlen(strip_tags($text)) > 50 ? '...' : ''),
+                'url' => 'https://t.bilibili.com/' . $dynamic['id']
             ];
+        };
+
+        // 返回近期动态列表（排除置顶，供通知逐条比对）
+        $response['dynamics'] = [];
+        foreach ($dynamics as $dynamic) {
+            if (!empty($dynamic['is_pinned'])) {
+                continue;
+            }
+            $response['dynamics'][] = $formatDynamic($dynamic);
+        }
+
+        // 若无非置顶动态，仍返回第一条（兼容仅置顶的情况）
+        if (empty($response['dynamics']) && count($dynamics) > 0) {
+            $response['dynamics'][] = $formatDynamic($dynamics[0]);
+        }
+
+        // 保留 latest_dynamic 字段，兼容旧逻辑
+        if (!empty($response['dynamics'])) {
+            $response['latest_dynamic'] = $response['dynamics'][0];
         }
     }
     

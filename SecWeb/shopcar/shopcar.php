@@ -97,7 +97,7 @@ ob_start();
         <div class="detail-inner" id="detail-inner">
             <p class="detail-breadcrumb" id="detail-breadcrumb"></p>
             <h1 class="detail-title" id="detail-title"></h1>
-            <div class="detail-image-wrap">
+            <div class="detail-image-wrap" id="detail-image-wrap" role="button" tabindex="0" aria-label="点击放大查看商品图片">
                 <img src="" alt="" class="detail-image" id="detail-image" referrerpolicy="no-referrer">
             </div>
             <div class="detail-divider" aria-hidden="true"></div>
@@ -123,6 +123,18 @@ ob_start();
     </div>
     <?php endif; ?>
 </div>
+
+<?php if ($hasContent): ?>
+<div class="shopcar-image-lightbox" id="shopcar-image-lightbox" style="display:none;" aria-hidden="true" role="dialog" aria-modal="true" aria-label="商品图片预览">
+    <button type="button" class="shopcar-lightbox-close" id="shopcar-lightbox-close" aria-label="关闭预览">&times;</button>
+    <div class="shopcar-lightbox-backdrop" id="shopcar-lightbox-backdrop"></div>
+    <div class="shopcar-lightbox-stage" id="shopcar-lightbox-stage">
+        <div class="shopcar-lightbox-viewport" id="shopcar-lightbox-viewport">
+            <img src="" alt="" class="shopcar-lightbox-img" id="shopcar-lightbox-img" referrerpolicy="no-referrer" draggable="false">
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php
 $content = ob_get_clean();
@@ -396,6 +408,23 @@ $additional_styles = <<<'CSS'
         border-radius: 12px;
         padding: 1rem;
         flex-shrink: 0;
+        cursor: zoom-in;
+        position: relative;
+        transition: background 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .detail-image-wrap:hover {
+        background: rgba(204, 148, 113, 0.08);
+        box-shadow: inset 0 0 0 1px rgba(204, 148, 113, 0.25);
+    }
+
+    .detail-image-wrap:focus-visible {
+        outline: 2px solid var(--color-accent);
+        outline-offset: 2px;
+    }
+
+    .detail-image-wrap:not(.has-image) {
+        cursor: default;
     }
 
     .detail-divider {
@@ -423,6 +452,95 @@ $additional_styles = <<<'CSS'
 
     .detail-image.fading {
         opacity: 0;
+    }
+
+    .shopcar-image-lightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        display: none;
+        padding: 0;
+    }
+
+    .shopcar-lightbox-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(20, 16, 12, 0.88);
+        backdrop-filter: blur(4px);
+    }
+
+    .shopcar-lightbox-stage {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        overflow: hidden;
+    }
+
+    .shopcar-lightbox-viewport {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        cursor: default;
+        touch-action: none;
+    }
+
+    .shopcar-lightbox-viewport.is-zoomed {
+        cursor: grab;
+    }
+
+    .shopcar-lightbox-viewport.is-dragging {
+        cursor: grabbing;
+    }
+
+    .shopcar-lightbox-img {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        display: block;
+        max-width: 92vw;
+        max-height: 92vh;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 10px;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+        background: rgba(255, 255, 255, 0.04);
+        transform: translate(-50%, -50%);
+        transform-origin: center center;
+        will-change: transform;
+        user-select: none;
+        -webkit-user-drag: none;
+    }
+
+    .shopcar-lightbox-close {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        z-index: 2;
+        width: 44px;
+        height: 44px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+        font-size: 1.75rem;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 0.2s ease, transform 0.2s ease;
+    }
+
+    .shopcar-lightbox-close:hover {
+        background: rgba(255, 255, 255, 0.22);
+        transform: scale(1.05);
+    }
+
+    @keyframes shopcarLightboxIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    .shopcar-image-lightbox.is-open {
+        animation: shopcarLightboxIn 0.22s ease;
     }
 
     .detail-lower {
@@ -600,6 +718,13 @@ if ($hasContent) {
 
     const detailTitle = document.getElementById('detail-title');
     const detailImage = document.getElementById('detail-image');
+    const detailImageWrap = document.getElementById('detail-image-wrap');
+    const lightbox = document.getElementById('shopcar-image-lightbox');
+    const lightboxImg = document.getElementById('shopcar-lightbox-img');
+    const lightboxClose = document.getElementById('shopcar-lightbox-close');
+    const lightboxBackdrop = document.getElementById('shopcar-lightbox-backdrop');
+    const lightboxStage = document.getElementById('shopcar-lightbox-stage');
+    const lightboxViewport = document.getElementById('shopcar-lightbox-viewport');
     const detailPrice = document.getElementById('detail-price');
     const detailDesc = document.getElementById('detail-desc');
     const detailLink = document.getElementById('detail-link');
@@ -650,6 +775,151 @@ if ($hasContent) {
         });
     }
 
+    function updateImageWrapState() {
+        if (!detailImageWrap || !detailImage) return;
+        const src = (detailImage.getAttribute('src') || '').trim();
+        const hasImage = src !== '';
+        detailImageWrap.classList.toggle('has-image', hasImage);
+        detailImageWrap.setAttribute('aria-disabled', hasImage ? 'false' : 'true');
+    }
+
+    let lightboxScale = 1;
+    let lightboxPanX = 0;
+    let lightboxPanY = 0;
+    let lightboxBaseW = 0;
+    let lightboxBaseH = 0;
+    let lightboxDragging = false;
+    let lightboxDragStartX = 0;
+    let lightboxDragStartY = 0;
+    let lightboxPanStartX = 0;
+    let lightboxPanStartY = 0;
+    const LIGHTBOX_MIN_SCALE = 1;
+    const LIGHTBOX_MAX_SCALE = 5;
+
+    function captureLightboxBaseSize() {
+        if (!lightboxImg || !lightboxViewport) return;
+        const nw = lightboxImg.naturalWidth;
+        const nh = lightboxImg.naturalHeight;
+        if (!nw || !nh) return;
+
+        const vp = lightboxViewport.getBoundingClientRect();
+        const maxW = vp.width * 0.92;
+        const maxH = vp.height * 0.92;
+        const fitRatio = Math.min(maxW / nw, maxH / nh, 1);
+        lightboxBaseW = nw * fitRatio;
+        lightboxBaseH = nh * fitRatio;
+    }
+
+    function clampLightboxPan() {
+        if (lightboxScale <= 1 || !lightboxViewport) {
+            lightboxPanX = 0;
+            lightboxPanY = 0;
+            return;
+        }
+
+        const vp = lightboxViewport.getBoundingClientRect();
+        const scaledW = lightboxBaseW * lightboxScale;
+        const scaledH = lightboxBaseH * lightboxScale;
+        const maxPanX = Math.max(0, (scaledW - vp.width) / 2);
+        const maxPanY = Math.max(0, (scaledH - vp.height) / 2);
+
+        lightboxPanX = Math.max(-maxPanX, Math.min(maxPanX, lightboxPanX));
+        lightboxPanY = Math.max(-maxPanY, Math.min(maxPanY, lightboxPanY));
+    }
+
+    function applyLightboxTransform() {
+        if (!lightboxImg) return;
+        lightboxImg.style.transform =
+            'translate(calc(-50% + ' + lightboxPanX + 'px), calc(-50% + ' + lightboxPanY + 'px)) scale(' + lightboxScale + ')';
+        if (lightboxViewport) {
+            lightboxViewport.classList.toggle('is-zoomed', lightboxScale > 1);
+        }
+    }
+
+    function resetLightboxZoom() {
+        lightboxScale = 1;
+        lightboxPanX = 0;
+        lightboxPanY = 0;
+        lightboxBaseW = 0;
+        lightboxBaseH = 0;
+        lightboxDragging = false;
+        if (lightboxViewport) {
+            lightboxViewport.classList.remove('is-dragging', 'is-zoomed');
+        }
+        if (lightboxImg) {
+            lightboxImg.style.transform = 'translate(-50%, -50%)';
+        }
+        if (lightbox) {
+            lightbox.classList.remove('is-open');
+        }
+    }
+
+    function zoomLightboxAtPoint(clientX, clientY, delta) {
+        if (!lightboxImg || !lightboxViewport) return;
+        if (!lightboxBaseW || !lightboxBaseH) captureLightboxBaseSize();
+
+        const oldScale = lightboxScale;
+        const newScale = Math.min(LIGHTBOX_MAX_SCALE, Math.max(LIGHTBOX_MIN_SCALE, oldScale + delta));
+        if (newScale === oldScale) return;
+
+        const vp = lightboxViewport.getBoundingClientRect();
+        const vpCx = vp.left + vp.width / 2;
+        const vpCy = vp.top + vp.height / 2;
+        const pointX = (clientX - vpCx - lightboxPanX) / oldScale;
+        const pointY = (clientY - vpCy - lightboxPanY) / oldScale;
+
+        lightboxScale = newScale;
+        if (lightboxScale <= 1) {
+            lightboxScale = 1;
+            lightboxPanX = 0;
+            lightboxPanY = 0;
+        } else {
+            lightboxPanX = clientX - vpCx - pointX * newScale;
+            lightboxPanY = clientY - vpCy - pointY * newScale;
+            clampLightboxPan();
+        }
+
+        applyLightboxTransform();
+    }
+
+    function openImageLightbox() {
+        if (!detailImage || !lightbox || !lightboxImg) return;
+        const src = detailImage.currentSrc || detailImage.src;
+        if (!src) return;
+
+        resetLightboxZoom();
+        lightboxImg.src = src;
+        lightboxImg.alt = detailImage.alt || '';
+
+        const onLightboxImageReady = function() {
+            captureLightboxBaseSize();
+            applyLightboxTransform();
+            lightboxImg.removeEventListener('load', onLightboxImageReady);
+        };
+
+        if (lightboxImg.complete && lightboxImg.naturalWidth) {
+            onLightboxImageReady();
+        } else {
+            lightboxImg.addEventListener('load', onLightboxImageReady);
+        }
+
+        lightbox.style.display = 'block';
+        lightbox.classList.add('is-open');
+        lightbox.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        if (lightboxClose) lightboxClose.focus();
+    }
+
+    function closeImageLightbox() {
+        if (!lightbox || !lightboxImg) return;
+        lightbox.style.display = 'none';
+        lightbox.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        resetLightboxZoom();
+        lightboxImg.src = '';
+        if (detailImageWrap) detailImageWrap.focus();
+    }
+
     function renderProduct(id) {
         const p = PRODUCTS[id];
         if (!p) return;
@@ -667,6 +937,7 @@ if ($hasContent) {
             detailImage.src = p.image || '';
             detailImage.alt = p.title || '';
             detailImage.classList.remove('fading');
+            updateImageWrapState();
         }, 150);
 
         if (p.link) {
@@ -703,6 +974,65 @@ if ($hasContent) {
             const id = parseInt(btn.dataset.productId, 10);
             renderProduct(id);
         });
+    });
+
+    if (detailImageWrap) {
+        detailImageWrap.addEventListener('click', function() {
+            if (detailImageWrap.classList.contains('has-image')) {
+                openImageLightbox();
+            }
+        });
+        detailImageWrap.addEventListener('keydown', function(e) {
+            if ((e.key === 'Enter' || e.key === ' ') && detailImageWrap.classList.contains('has-image')) {
+                e.preventDefault();
+                openImageLightbox();
+            }
+        });
+    }
+
+    if (lightboxClose) lightboxClose.addEventListener('click', closeImageLightbox);
+    if (lightboxBackdrop) lightboxBackdrop.addEventListener('click', closeImageLightbox);
+
+    if (lightboxStage) {
+        lightboxStage.addEventListener('wheel', function(e) {
+            if (!lightbox || lightbox.style.display !== 'block' || !e.altKey) return;
+            e.preventDefault();
+            const step = e.deltaY > 0 ? -0.12 : 0.12;
+            zoomLightboxAtPoint(e.clientX, e.clientY, step);
+        }, { passive: false });
+    }
+
+    if (lightboxViewport) {
+        lightboxViewport.addEventListener('mousedown', function(e) {
+            if (!lightbox || lightbox.style.display !== 'block' || lightboxScale <= 1 || e.button !== 0) return;
+            e.preventDefault();
+            lightboxDragging = true;
+            lightboxDragStartX = e.clientX;
+            lightboxDragStartY = e.clientY;
+            lightboxPanStartX = lightboxPanX;
+            lightboxPanStartY = lightboxPanY;
+            lightboxViewport.classList.add('is-dragging');
+        });
+    }
+
+    document.addEventListener('mousemove', function(e) {
+        if (!lightboxDragging) return;
+        lightboxPanX = lightboxPanStartX + (e.clientX - lightboxDragStartX);
+        lightboxPanY = lightboxPanStartY + (e.clientY - lightboxDragStartY);
+        clampLightboxPan();
+        applyLightboxTransform();
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (!lightboxDragging) return;
+        lightboxDragging = false;
+        if (lightboxViewport) lightboxViewport.classList.remove('is-dragging');
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (lightbox && lightbox.style.display === 'block') {
+            if (e.key === 'Escape') closeImageLightbox();
+        }
     });
 
     if (firstId && PRODUCTS[firstId]) {

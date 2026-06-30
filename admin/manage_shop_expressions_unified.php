@@ -996,8 +996,15 @@ $extra_styles = '
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
+.product-series-group-header-bar {
+    display: flex;
+    align-items: center;
+    background: linear-gradient(45deg, #f8fafc, #f1f5f9);
+}
+
 .product-series-group-header {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1005,15 +1012,28 @@ $extra_styles = '
     border: none;
     cursor: pointer;
     text-align: left;
-    background: linear-gradient(45deg, #f8fafc, #f1f5f9);
+    background: transparent;
     color: #334155;
     font-size: 0.95rem;
     font-weight: 600;
     transition: background 0.2s ease;
 }
 
-.product-series-group-header:hover {
+.product-series-group-toggle {
+    flex-shrink: 0;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+}
+
+.product-series-group-header-bar:hover {
     background: linear-gradient(45deg, #f1f5f9, #e2e8f0);
+}
+
+.product-series-group.is-inactive .product-series-group-title {
+    text-decoration: line-through;
+    text-decoration-color: #94a3b8;
+    color: #94a3b8;
 }
 
 .product-series-group-chevron {
@@ -2588,6 +2608,7 @@ include 'admin_header.php';
                                         <li>· 商品系列用于前台左侧分类导航</li>
                                         <li>· 添加系列后，可在商品编辑时选择绑定</li>
                                         <li>· 删除系列不会影响已存在商品，但需先解除绑定</li>
+                                        <li>· 关闭「前台显示」后，该系列在前台隐藏；也可在商品列表的系列标题旁直接切换</li>
                                     </ul>
                                 </div>
                             </div>
@@ -2724,12 +2745,22 @@ include 'admin_header.php';
                                 $groupTotal = count($group['products']);
                                 $groupInactive = empty($group['active']);
                             ?>
-                            <div class="product-series-group" data-series-key="<?php echo htmlspecialchars($groupKey); ?>" data-series-id="<?php echo (int)$group['id']; ?>">
-                                <button type="button" class="product-series-group-header" onclick="toggleProductSeriesGroup(this)" aria-expanded="true">
-                                    <i class="fas fa-chevron-down product-series-group-chevron"></i>
-                                    <span class="product-series-group-title"><?php echo htmlspecialchars($group['title']); ?></span>
-                                    <span class="product-series-group-count" data-total="<?php echo $groupTotal; ?>"><?php echo $groupTotal; ?> 件</span>
-                                </button>
+                            <div class="product-series-group<?php echo $groupInactive ? ' is-inactive' : ''; ?>" data-series-key="<?php echo htmlspecialchars($groupKey); ?>" data-series-id="<?php echo (int)$group['id']; ?>" data-series-active="<?php echo $groupInactive ? '0' : '1'; ?>">
+                                <div class="product-series-group-header-bar">
+                                    <button type="button" class="product-series-group-header" onclick="toggleProductSeriesGroup(this)" aria-expanded="true">
+                                        <i class="fas fa-chevron-down product-series-group-chevron"></i>
+                                        <span class="product-series-group-title"><?php echo htmlspecialchars($group['title']); ?></span>
+                                        <span class="product-series-group-count" data-total="<?php echo $groupTotal; ?>"><?php echo $groupTotal; ?> 件</span>
+                                    </button>
+                                    <?php if ((int)$group['id'] > 0): ?>
+                                    <div class="product-series-group-toggle" onclick="event.stopPropagation()">
+                                        <label class="switch" title="前台显示">
+                                            <input type="checkbox" class="series-active-toggle" data-series-id="<?php echo (int)$group['id']; ?>" <?php echo $groupInactive ? '' : 'checked'; ?>>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
                                 <div class="product-series-group-body expression-grid">
                                     <?php foreach ($group['products'] as $product): ?>
                                     <div class="expression-item"
@@ -4237,6 +4268,58 @@ function toggleProductSeriesGroup(headerBtn) {
     saveProductSeriesCollapseState();
 }
 
+function updateProductSeriesGroupActive(seriesId, active) {
+    const group = document.querySelector(`#product-grid .product-series-group[data-series-id="${seriesId}"]`);
+    if (!group) return;
+    group.classList.toggle('is-inactive', !active);
+    group.setAttribute('data-series-active', active ? '1' : '0');
+    const toggle = group.querySelector('.series-active-toggle');
+    if (toggle) toggle.checked = !!active;
+}
+
+function syncSeriesListItemActive(seriesId, active) {
+    const card = document.querySelector(`#existing-series-list .series-list-item[data-series-id="${seriesId}"]`);
+    if (!card) return;
+    try {
+        const raw = card.getAttribute('data-series');
+        const series = JSON.parse(decodeURIComponent(raw));
+        series.active = active ? 1 : 0;
+        card.outerHTML = buildSeriesListItem(series);
+    } catch (e) { /* ignore */ }
+}
+
+function toggleSeriesActiveFromGrid(toggleEl) {
+    const seriesId = toggleEl.getAttribute('data-series-id');
+    const active = toggleEl.checked ? 1 : 0;
+
+    fetch('ajax_shopcar_series.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `action=toggle_active&id=${encodeURIComponent(seriesId)}&active=${active}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            updateProductSeriesGroupActive(seriesId, active);
+            syncSeriesListItemActive(seriesId, active);
+            showToast(data.message || (active ? '系列已开启前台显示' : '系列已关闭前台显示'));
+        } else {
+            showToast(data.message || '更新失败', 'error');
+            toggleEl.checked = !toggleEl.checked;
+        }
+    })
+    .catch(() => {
+        showToast('更新失败，请检查网络连接', 'error');
+        toggleEl.checked = !toggleEl.checked;
+    });
+}
+
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('series-active-toggle')) {
+        toggleSeriesActiveFromGrid(e.target);
+    }
+});
+
 // 监听浏览器前进后退按钮
 window.addEventListener('popstate', function() {
     const currentSection = getCurrentSection();
@@ -4759,6 +4842,7 @@ function saveSeriesEdit() {
             sortSeriesListByPosition();
             showToast('商品系列已更新！');
             refreshProductSeriesSelect();
+            updateProductSeriesGroupActive(id, active);
             closeEditSeriesModal();
         } else {
             showToast(data.message || '更新失败', 'error');
