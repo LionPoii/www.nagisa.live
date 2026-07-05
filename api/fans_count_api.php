@@ -1,12 +1,8 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 // 设置允许跨域请求的头部
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json; charset=UTF-8');
-
-// 设置缓存控制头
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Cache-Control: post-check=0, pre-check=0', false);
-header('Pragma: no-cache');
 
 // 引入数据库类
 require_once __DIR__ . '/../includes/database.php';

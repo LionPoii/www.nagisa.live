@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 // 确保所有错误都被捕获并以JSON格式返回
 set_error_handler(function($severity, $message, $file, $line) {
     // 仅记录错误，但不中断执行

@@ -187,9 +187,19 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        fetch('/api/check_live_status.php?_=' + Date.now())
+        fetch('/api/live_status_notice.php?_=' + Date.now(), { cache: 'no-store' })
             .then(function(response) { return response.json(); })
             .then(function(data) {
+                if (!data || typeof data.live_status === 'undefined') {
+                    return;
+                }
+                data = {
+                    is_living: data.live_status === 1,
+                    title: data.title || '直播中',
+                    room_id: data.room_id,
+                    cover_url: data.cover || data.keyframe || data.background || ''
+                };
+                
                 if (!data || typeof data.is_living === 'undefined') {
                     return;
                 }
@@ -360,19 +370,41 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // 检查动态更新（支持一次检测多条新动态）
-    function checkDynamicUpdates() {
-        const timestamp = new Date().getTime();
+    function stripHtmlForNotify(html) {
+        var el = document.createElement('div');
+        el.innerHTML = html || '';
+        return (el.textContent || el.innerText || '').trim();
+    }
 
-        fetch(`https://www.nagisa.live/api/check_dynamic_updates.php?t=${timestamp}&force=1`)
-            .then(response => response.json())
-            .then(data => {
-                if (!data || !Array.isArray(data.dynamics) || data.dynamics.length === 0) {
+    function checkDynamicUpdates() {
+        fetch('/api/dynamic_api.php?action=get_dynamics&page=1&page_size=10&force=1&_=' + Date.now(), {
+            cache: 'no-store',
+            credentials: 'same-origin'
+        })
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (!data || data.code !== 0 || !data.data || !Array.isArray(data.data.dynamics)) {
                     return;
                 }
 
-                const currentDynamics = data.dynamics.filter(function(d) {
-                    return d && d.id;
-                });
+                const currentDynamics = data.data.dynamics
+                    .filter(function(d) {
+                        return d && d.id && !d.is_pinned;
+                    })
+                    .map(function(d) {
+                        var plain = stripHtmlForNotify(d.content);
+                        var snippet = plain.length > 50 ? plain.substring(0, 50) + '...' : plain;
+                        return {
+                            id: String(d.id),
+                            text: snippet,
+                            url: 'https://t.bilibili.com/' + d.id
+                        };
+                    });
 
                 // 首次初始化：记录当前列表，不弹通知
                 if (!dynamicNotifyInitialized) {
@@ -410,6 +442,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     seenDynamicIds.add(String(d.id));
                 });
                 saveSeenDynamicIds();
+
+                document.dispatchEvent(new CustomEvent('dynamicUpdated', {
+                    detail: { count: newDynamics.length }
+                }));
             })
             .catch(function() {
                 // 忽略网络错误

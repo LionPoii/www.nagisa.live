@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 /**
  * 哔哩哔哩动态API接口
  * 提供动态数据获取和配置管理功能
@@ -102,10 +103,6 @@ try {
     $action = $_GET['action'] ?? $_POST['action'] ?? '';
     
     // 添加缓存控制头
-    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-    header('Cache-Control: post-check=0, pre-check=0', false);
-    header('Pragma: no-cache');
-    
     switch ($action) {
         case 'get_dynamics':
             // 获取动态列表

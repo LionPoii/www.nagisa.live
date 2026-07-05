@@ -82,10 +82,9 @@
 .section1-left-button-text {
     font-family: 'KingHwaOldSongv3.0', 'QiantuHouhei', sans-serif;
     font-size: 38px;
-    color: #4d4030;
     z-index: 3;
     position: relative;
-    font-weight: bold; /* 修改为加粗 */
+    font-weight: bold;
     letter-spacing: 6px;
     text-shadow: 1px 1px 1px rgba(0,0,0,0.1);
     display: flex;
@@ -98,11 +97,3 @@
     transform: translate(15px, 5px);
     transition: color 0.5s ease, letter-spacing 0.5s ease, text-shadow 0.5s ease, transform 0.5s ease;
 }
-
-/* 悬停时文字效果变化 */
-.section1-left-button-container:hover .section1-left-button-text {
-    color: #cc9471; /* 变为温暖的橙棕色，与条纹2颜色协调 */
-    letter-spacing: 7px; /* 略微增加字间距，从6px增加到7px */
-    text-shadow: 1px 1px 3px rgba(204, 148, 113, 0.3); /* 添加带颜色的文字阴影 */
-    transform: translate(20px, 8px); /* 向右移动20px，向下移动8px */
-} 

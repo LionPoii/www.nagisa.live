@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 define('IN_SYSTEM', true);
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/functions.php';

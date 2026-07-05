@@ -74,7 +74,6 @@
 .tag-button-text {
     font-family: 'QiantuHouhei', sans-serif;
     font-size: 38px;
-    color: #4d4030;
     z-index: 3;
     position: relative;
     font-weight: normal;
@@ -90,11 +89,3 @@
     transform: translateX(10px);
     transition: color 0.5s ease, letter-spacing 0.5s ease, text-shadow 0.5s ease, transform 0.5s ease;
 }
-
-/* 悬停时文字效果变化 */
-.tag-button-container:hover .tag-button-text {
-    color: #cc9471; /* 变为温暖的橙棕色，与条纹2颜色协调 */
-    letter-spacing: 7px; /* 略微增加字间距，从6px增加到7px */
-    text-shadow: 1px 1px 3px rgba(204, 148, 113, 0.3); /* 添加带颜色的文字阴影 */
-    transform: translateX(15px); /* 向右移动5px */
-} 

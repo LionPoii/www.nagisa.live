@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 // 设置安全响应头
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');

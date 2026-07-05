@@ -140,6 +140,68 @@ function proxyBiliImage($url) {
     return BilibiliRichText::normalizeMediaUrl($url);
 }
 
+/** 渲染动态附件（图片 / 视频 / 卡片） */
+function nagisa_render_dynamic_attachments(array $dynamic): void {
+    if (!empty($dynamic['images'])) {
+        $imageCount = count($dynamic['images']);
+        echo '<div class="dynamic-images ' . ($imageCount == 1 ? 'single-image' : '') . '">';
+        foreach ($dynamic['images'] as $image) {
+            echo '<div class="dynamic-image ' . ($imageCount == 1 ? 'full-width' : '') . '">';
+            echo '<img src="' . htmlspecialchars($image) . '" alt="动态图片" loading="lazy" referrerpolicy="no-referrer">';
+            echo '</div>';
+        }
+        echo '</div>';
+    }
+
+    if (!empty($dynamic['video'])) {
+        $video = $dynamic['video'];
+        echo '<div class="dynamic-video">';
+        echo '<a href="https://www.bilibili.com/video/' . htmlspecialchars($video['bvid']) . '" target="_blank">';
+        echo '<div class="video-cover">';
+        echo '<img src="' . htmlspecialchars($video['cover']) . '" alt="视频封面" referrerpolicy="no-referrer">';
+        echo '<div class="video-duration">' . htmlspecialchars($video['duration']) . '</div>';
+        echo '<div class="video-play-icon">▶</div>';
+        echo '</div>';
+        echo '<div class="video-info">';
+        echo '<div class="video-title">' . $video['title'] . '</div>';
+        echo '<div class="video-stats">';
+        echo '<span>播放: ';
+        echo !empty($video['play'])
+            ? htmlspecialchars($video['play'])
+            : (isset($video['view'])
+                ? (is_numeric($video['view']) ? number_format($video['view']) : htmlspecialchars($video['view']))
+                : '');
+        echo '</span>';
+        echo '<span>弹幕: ' . (isset($video['danmaku']) ? htmlspecialchars($video['danmaku']) : '') . '</span>';
+        echo '</div></div></a></div>';
+    }
+
+    if (!empty($dynamic['card'])) {
+        $card = $dynamic['card'];
+        $hasCardContent = !empty($card['title']) || !empty($card['desc']) || !empty($card['pics']);
+        if ($hasCardContent) {
+            echo '<div class="dynamic-card">';
+            if (!empty($card['title'])) {
+                echo '<div class="card-title">' . $card['title'] . '</div>';
+            }
+            if (!empty($card['desc'])) {
+                echo '<div class="card-desc">' . $card['desc'] . '</div>';
+            }
+            if (!empty($card['pics'])) {
+                $picCount = count($card['pics']);
+                echo '<div class="card-images ' . ($picCount == 1 ? 'single-image' : '') . '">';
+                foreach ($card['pics'] as $pic) {
+                    echo '<div class="card-image ' . ($picCount == 1 ? 'full-width' : '') . '">';
+                    echo '<img src="' . htmlspecialchars($pic) . '" alt="卡片图片" loading="lazy" referrerpolicy="no-referrer">';
+                    echo '</div>';
+                }
+                echo '</div>';
+            }
+            echo '</div>';
+        }
+    }
+}
+
 // 处理所有动态中的图片URL
 foreach ($dynamics as $index => &$dynamic) {
     // 处理动态中的图片
@@ -216,56 +278,15 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
                         <?php if (!empty($dynamic['content'])): ?>
                             <div class="dynamic-text"><?php echo $dynamic['content']; ?></div>
                         <?php endif; ?>
-                        
-                        <!-- 图片内容 -->
-                        <?php if (!empty($dynamic['images'])): ?>
-                            <div class="dynamic-images <?php echo count($dynamic['images']) == 1 ? 'single-image' : ''; ?>">
-                                <?php foreach ($dynamic['images'] as $index => $image): ?>
-                                    <div class="dynamic-image <?php echo count($dynamic['images']) == 1 ? 'full-width' : ''; ?>">
-                                        <img src="<?php echo htmlspecialchars($image); ?>" alt="动态图片" loading="lazy" referrerpolicy="no-referrer">
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <!-- 视频内容 -->
-                        <?php if ($dynamic['video']): ?>
-                            <div class="dynamic-video">
-                                <a href="https://www.bilibili.com/video/<?php echo htmlspecialchars($dynamic['video']['bvid']); ?>" target="_blank">
-                                    <div class="video-cover">
-                                        <img src="<?php echo htmlspecialchars($dynamic['video']['cover']); ?>" alt="视频封面" referrerpolicy="no-referrer">
-                                        <div class="video-duration"><?php echo htmlspecialchars($dynamic['video']['duration']); ?></div>
-                                        <div class="video-play-icon">▶</div>
-                                    </div>
-                                    <div class="video-info">
-                                        <div class="video-title"><?php echo $dynamic['video']['title']; ?></div>
-                                        <div class="video-stats">
-                                            <span>播放: <?php echo !empty($dynamic['video']['play']) ? htmlspecialchars($dynamic['video']['play']) : (isset($dynamic['video']['view']) ? (is_numeric($dynamic['video']['view']) ? number_format($dynamic['video']['view']) : htmlspecialchars($dynamic['video']['view'])) : ''); ?></span>
-                                            <span>弹幕: <?php echo isset($dynamic['video']['danmaku']) ? htmlspecialchars($dynamic['video']['danmaku']) : ''; ?></span>
-                                        </div>
-                                    </div>
-                                </a>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <!-- 卡片内容 -->
-                        <?php if ($dynamic['card']): ?>
-                            <div class="dynamic-card">
-                                <?php if (!empty($dynamic['card']['title'])): ?>
-                                    <div class="card-title"><?php echo $dynamic['card']['title']; ?></div>
+
+                        <?php nagisa_render_dynamic_attachments($dynamic); ?>
+
+                        <?php if (!empty($dynamic['forward_origin'])): ?>
+                            <div class="dynamic-forward-card">
+                                <?php if (!empty($dynamic['forward_origin']['content'])): ?>
+                                    <div class="dynamic-text dynamic-forward-text"><?php echo $dynamic['forward_origin']['content']; ?></div>
                                 <?php endif; ?>
-                                <?php if (!empty($dynamic['card']['desc'])): ?>
-                                    <div class="card-desc"><?php echo $dynamic['card']['desc']; ?></div>
-                                <?php endif; ?>
-                                <?php if (!empty($dynamic['card']['pics'])): ?>
-                                    <div class="card-images <?php echo count($dynamic['card']['pics']) == 1 ? 'single-image' : ''; ?>">
-                                        <?php foreach ($dynamic['card']['pics'] as $pic): ?>
-                                            <div class="card-image <?php echo count($dynamic['card']['pics']) == 1 ? 'full-width' : ''; ?>">
-                                                <img src="<?php echo htmlspecialchars($pic); ?>" alt="卡片图片" loading="lazy" referrerpolicy="no-referrer">
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php endif; ?>
+                                <?php nagisa_render_dynamic_attachments($dynamic['forward_origin']); ?>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -553,11 +574,6 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
     height: 100%;
     object-fit: cover;
     object-position: top; /* 确保显示图片顶部 */
-    transition: transform 0.3s ease;
-}
-
-.dynamic-image:hover img {
-    transform: scale(1.05);
 }
 
 /* 单张图片时的图片样式 */
@@ -717,7 +733,6 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
     height: 100%;
     object-fit: cover;
     object-position: top; /* 确保显示图片顶部 */
-    transition: transform 0.3s ease;
 }
 
 /* 单张卡片图片时的图片样式 */
@@ -725,10 +740,6 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
     object-fit: contain; /* 保持图片比例 */
     object-position: top; /* 从顶部开始显示 */
     max-height: 300px; /* 限制最大高度 */
-}
-
-.card-image:hover img {
-    transform: scale(1.05);
 }
 
 /* 时间包装器样式 */
@@ -863,19 +874,37 @@ if (isset($_GET['refresh_dynamic']) && $_GET['refresh_dynamic'] == '1') {
     box-shadow: 0 2px 4px rgba(251, 114, 153, 0.3);
 }
 
-/* 删除转发图标样式 */
+/* 转发原文容器：上侧粗灰条 + 边框盒子 */
 .dynamic-forward-card {
-    display: none; /* 隐藏转发图标 */
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(192, 197, 198, 0.08);
+    border: 1px solid rgba(192, 197, 198, 0.35);
+    border-top: 3px solid #C0C5C6;
+    border-radius: 8px;
 }
 
-/* 当同时有置顶和转发标识时的样式 */
-.dynamic-item .dynamic-pinned + .dynamic-forward-card {
-    right: 60px; /* 当有置顶标签时，转发标签靠右偏移 */
+.dynamic-forward-card .dynamic-text:last-child,
+.dynamic-forward-card .dynamic-video:last-child,
+.dynamic-forward-card .dynamic-card:last-child,
+.dynamic-forward-card .dynamic-images:last-child {
+    margin-bottom: 0;
 }
 
-/* 移除原来的全局转发图标样式 */
-.dynamic-forward {
-    display: none; /* 隐藏原全局转发图标 */
+.dynamic-forward-card .dynamic-text:first-child,
+.dynamic-forward-card .dynamic-images:first-child,
+.dynamic-forward-card .dynamic-video:first-child,
+.dynamic-forward-card .dynamic-card:first-child {
+    margin-top: 0;
+}
+
+.dynamic-forward-text {
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.dynamic-forward-card .dynamic-video,
+.dynamic-forward-card .dynamic-card {
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .dynamic-images img {
@@ -990,8 +1019,8 @@ function setupAutoRefresh() {
         // 创建一个新的XMLHttpRequest对象
         const xhr = new XMLHttpRequest();
         
-        // 构建带有刷新参数的URL，添加时间戳确保不使用缓存
-        const url = window.location.pathname + '?_=' + new Date().getTime();
+        // 强制绕过服务端动态缓存
+        const url = window.location.pathname + '?refresh_dynamic=1&_=' + new Date().getTime();
         
         // 配置请求
         xhr.open('GET', url, true);
@@ -1037,6 +1066,14 @@ function setupAutoRefresh() {
         // 发送请求
         xhr.send();
     }
+    
+    // 供通知组件或其他模块触发立即刷新
+    window.refreshBilibiliDynamics = refreshDynamics;
+    
+    // 通知检测到新动态时立即刷新页面列表
+    document.addEventListener('dynamicUpdated', function() {
+        refreshDynamics();
+    });
     
     // 设置定时器
     setInterval(refreshDynamics, refreshInterval);

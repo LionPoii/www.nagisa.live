@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 /**
  * 直播状态API
  * 返回当前直播状态信息
@@ -7,7 +8,6 @@
 // 设置响应头
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-header('Cache-Control: no-cache, no-store, must-revalidate');
 
 // 引入直播状态检测类
 require_once __DIR__ . '/../includes/bilibili_live.php';

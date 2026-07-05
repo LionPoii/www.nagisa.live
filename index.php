@@ -5,9 +5,12 @@ header('X-Frame-Options: SAMEORIGIN');
 header('X-XSS-Protection: 1; mode=block');
 header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
 
-// 设置缓存控制头 - 修改为允许缓存
-header('Cache-Control: public, max-age=86400'); // 缓存1天
-header('Pragma: public');
+// 首页含动态/直播等实时内容，禁止 CDN/浏览器缓存整页
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
+header('Expires: 0');
+header('CDN-Cache-Control: no-store');
 
 // 定义系统标记
 define('IN_SYSTEM', true);
@@ -51,6 +54,20 @@ $default_style = [
     'image_size' => '50'
 ];
 $style = array_merge($default_style, $style);
+
+// 主站主题色（内联样式用，单点维护）
+$nagisa_theme = [
+    'primary'     => '#4d4030',
+    'accent'      => '#cc9471',
+    'accent_rgb'  => '204, 148, 113',
+    'secondary'   => '#e8a274',
+    'bg_dark'     => '#222',
+    'loader'      => '#ECA97B',
+    'board_text'  => '#4c526b',
+    'stripe1'     => '#3D4255',
+    'stripe2'     => '#D79568',
+    'stripe3'     => '#CAC8C7',
+];
 
 // 现在开始输出HTML内容
 ?>
@@ -169,8 +186,9 @@ $style = array_merge($default_style, $style);
                     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
                     
                     // 使用fetch API请求直播状态，使用现有的API端点
-                    const response = await fetch('/api/check_live_status.php?_=' + new Date().getTime(), {
-                        signal: controller.signal
+                    const response = await fetch('/api/live_status_notice.php?_=' + new Date().getTime(), {
+                        signal: controller.signal,
+                        cache: 'no-store'
                     });
                     
                     clearTimeout(timeoutId); // 清除超时
@@ -179,7 +197,13 @@ $style = array_merge($default_style, $style);
                         throw new Error(`网络请求失败: ${response.status} ${response.statusText}`);
                     }
                     
-                    const data = await response.json();
+                    const raw = await response.json();
+                    const data = typeof raw.is_living !== 'undefined' ? raw : {
+                        is_living: raw.live_status === 1,
+                        title: raw.title || '直播中',
+                        room_id: raw.room_id,
+                        cover_url: raw.cover || raw.keyframe || raw.background || ''
+                    };
                     
                     // 检查API返回的数据格式是否正确
                     if (!data || typeof data !== 'object') {
@@ -240,26 +264,65 @@ $style = array_merge($default_style, $style);
     </script>
     
     <style>
+        :root {
+            --nagisa-primary: <?php echo $nagisa_theme['primary']; ?>;
+            --nagisa-accent: <?php echo $nagisa_theme['accent']; ?>;
+            --nagisa-accent-rgb: <?php echo $nagisa_theme['accent_rgb']; ?>;
+            --nagisa-secondary: <?php echo $nagisa_theme['secondary']; ?>;
+            --nagisa-bg-dark: <?php echo $nagisa_theme['bg_dark']; ?>;
+            --nagisa-loader: <?php echo $nagisa_theme['loader']; ?>;
+            --nagisa-board-text: <?php echo $nagisa_theme['board_text']; ?>;
+            --nagisa-stripe-1: <?php echo $nagisa_theme['stripe1']; ?>;
+            --nagisa-stripe-2: <?php echo $nagisa_theme['stripe2']; ?>;
+            --nagisa-stripe-3: <?php echo $nagisa_theme['stripe3']; ?>;
+        }
+
+        html, body {
+            background: var(--nagisa-bg-dark);
+        }
+
+        .section-content {
+            color: white;
+        }
+
+        .tag-button-text,
+        .section1-left-button-text {
+            color: var(--nagisa-primary);
+        }
+
+        .tag-button-container:hover .tag-button-text,
+        .section1-left-button-container:hover .section1-left-button-text {
+            color: var(--nagisa-accent);
+            letter-spacing: 7px;
+            text-shadow: 1px 1px 3px rgba(var(--nagisa-accent-rgb), 0.3);
+        }
+
+        .section1-left-button-container:hover .section1-left-button-text {
+            transform: translate(20px, 8px);
+        }
+
+        .tag-button-container:hover .tag-button-text {
+            transform: translateX(15px);
+        }
+
         .board1-container:hover .board1-text, 
         .board2-container:hover .board2-text, 
         .board3-container:hover .board3-text {
-            color: #cc9471 !important; /* 鼠标悬停时文字变为粉色 */
+            color: var(--nagisa-accent) !important;
         }
         
-        /* 添加clutter按钮悬停效果 */
         .clutter-container:hover {
             transform: scale(1.05);
         }
         
         .clutter-container:hover .clutter-text {
-            color: #cc9471 !important;
+            color: var(--nagisa-accent) !important;
         }
         
         .clutter-container:hover .clutter-image {
             transform: translateY(-10px);
         }
         
-        /* 添加浮动动画 */
         .clutter-container {
             animation: floating 3s ease-in-out infinite;
         }
@@ -270,7 +333,6 @@ $style = array_merge($default_style, $style);
             100% { transform: translateY(0px); }
         }
         
-        /* 模态窗口样式 */
         .custom-modal {
             display: none;
             position: fixed;
@@ -296,13 +358,13 @@ $style = array_merge($default_style, $style);
             position: relative;
             transform: translateY(-20px);
             transition: transform 0.3s ease;
-            border: 2px solid rgb(204, 148, 113); /* 添加边框颜色 */
+            border: 2px solid rgb(var(--nagisa-accent-rgb));
         }
         
         .modal-message {
             font-size: 1.2rem;
-            color: #4d4030; /* 与页脚颜色匹配 */
-            font-family: 'QiantuHouhei', sans-serif; /* 使用网站字体 */
+            color: var(--nagisa-primary);
+            font-family: 'QiantuHouhei', sans-serif;
             letter-spacing: 1px;
         }
         
@@ -313,43 +375,53 @@ $style = array_merge($default_style, $style);
         .custom-modal.show .modal-content {
             transform: translateY(0);
         }
+
+        .expression-button:hover {
+            background-color: var(--nagisa-primary);
+            transform: scale(1.28);
+            box-shadow: 0 5px 15px var(--nagisa-primary);
+        }
+
+        .expression-button:active {
+            transform: scale(1.15);
+            box-shadow: 0 2px 8px var(--nagisa-primary);
+        }
         
-        /* 所有Board emoji动画样式 */
         .board1-emoji,
         .board2-emoji,
         .board3-emoji {
             position: absolute;
             left: 50%;
-            top: 62.5%; /* 初始位置在文字附近 */
+            top: 62.5%;
             transform: translateX(-50%);
             opacity: 0;
             height: 0;
             transition: all 0.3s ease;
-            pointer-events: none; /* 确保图片不会影响鼠标事件 */
-            z-index: 10; /* 确保emoji在文字上方 */
+            pointer-events: none;
+            z-index: 10;
         }
         
         .board1-container:hover .board1-emoji,
         .board2-container:hover .board2-emoji,
         .board3-container:hover .board3-emoji {
             opacity: 1;
-            top: 0%; /* 减少向上移动的距离 */
-            height: 50%; /* 缩小图片大小 */
+            top: 0%;
+            height: 50%;
         }
     </style>
 </head>
 <body>
     <!-- 全屏Loading遮罩 -->
     <div id="global-loading" style="position:fixed;z-index:9999;top:0;left:0;width:100vw;height:100vh;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.5s ease;">
-      <div class="loader-spinner" style="width:48px;height:48px;border:5px solid #eee;border-top:5px solid #ECA97B;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:20px;"></div>
+      <div class="loader-spinner" style="width:48px;height:48px;border:5px solid #eee;border-top:5px solid <?php echo $nagisa_theme['loader']; ?>;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:20px;"></div>
       
       <!-- 进度条容器 -->
       <div class="progress-container" style="width:300px;max-width:80vw;margin-bottom:15px;">
-        <div class="progress-bar" id="progress-bar" style="width:0%;height:6px;background:linear-gradient(90deg,#ECA97B,#cc9471);border-radius:3px;transition:width 0.3s ease;box-shadow:0 2px 8px rgba(236,169,123,0.3);"></div>
+        <div class="progress-bar" id="progress-bar" style="width:0%;height:6px;background:linear-gradient(90deg,<?php echo $nagisa_theme['loader']; ?>,<?php echo $nagisa_theme['accent']; ?>);border-radius:3px;transition:width 0.3s ease;box-shadow:0 2px 8px rgba(<?php echo $nagisa_theme['accent_rgb']; ?>,0.3);"></div>
       </div>
       
       <!-- 进度文本 -->
-      <div class="progress-text" id="progress-text" style="font-family:'Microsoft YaHei','PingFang SC','Helvetica Neue',sans-serif;color:#4d4030;font-size:16px;text-align:center;letter-spacing:1px;">
+      <div class="progress-text" id="progress-text" style="font-family:'Microsoft YaHei','PingFang SC','Helvetica Neue',sans-serif;color:<?php echo $nagisa_theme['primary']; ?>;font-size:16px;text-align:center;letter-spacing:1px;">
         寻找钥匙中...
       </div>
       
@@ -491,17 +563,6 @@ $style = array_merge($default_style, $style);
             <?php require_once 'components/announce_button.php'; ?>
     
 
-    <style>
-        .expression-button:hover {
-            background-color: #4d4030;
-            transform: scale(1.28);
-            box-shadow: 0 5px 15px #4d4030;
-        }
-        .expression-button:active {
-            transform: scale(1.15);
-            box-shadow: 0 2px 8px #4d4030;
-        }
-    </style>
             
             <div class="section-content container mx-auto px-4">
                 <!-- 添加Filebag和Card信息组件 -->

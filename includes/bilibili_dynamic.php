@@ -14,6 +14,15 @@ class BilibiliDynamic {
     private $cache_dir;
     private $log_dir;
     private $cache_time;
+    private $img_key = '';
+    private $sub_key = '';
+    private $last_wbi_fetch_time = 0;
+    private $mixinKeyEncTab = [
+        46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+        33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+        61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+        36, 20, 34, 44, 52
+    ];
     
     /**
      * 构造函数
@@ -78,7 +87,8 @@ class BilibiliDynamic {
         curl_setopt($ch, CURLOPT_HTTPHEADER, $this->headers);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_ENCODING, '');
         
         // 执行请求
         $response = curl_exec($ch);
@@ -123,10 +133,124 @@ class BilibiliDynamic {
         }
         
         if (!empty($cookie)) {
-            $headers[] = 'Cookie: ' . $cookie;
+            $headers[] = 'Cookie: ' . $this->ensureCookieWithBuvid($cookie);
         }
         
         $this->headers = $headers;
+    }
+
+    /**
+     * 补全 Cookie 中的 buvid3（B 站接口风控需要）
+     */
+    private function ensureCookieWithBuvid($cookie) {
+        $cookie = trim((string) $cookie);
+        if ($cookie === '') {
+            return $cookie;
+        }
+        if (stripos($cookie, 'buvid3=') !== false) {
+            return $cookie;
+        }
+
+        $ch = curl_init('https://api.bilibili.com/x/frontend/finger/spi');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER => [
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            ],
+        ]);
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $data = json_decode($response, true);
+        if (!is_array($data) || ($data['code'] ?? -1) !== 0) {
+            return $cookie;
+        }
+
+        $buvid3 = $data['data']['b_3'] ?? '';
+        $buvid4 = $data['data']['b_4'] ?? '';
+        if ($buvid3 !== '') {
+            $cookie .= '; buvid3=' . $buvid3;
+        }
+        if ($buvid4 !== '') {
+            $cookie .= '; buvid4=' . $buvid4;
+        }
+        return $cookie;
+    }
+
+    private function getMixinKey($orig) {
+        $result = '';
+        foreach ($this->mixinKeyEncTab as $i) {
+            $result .= isset($orig[$i]) ? $orig[$i] : '';
+        }
+        return substr($result, 0, 32);
+    }
+
+    /**
+     * 获取 WBI 签名密钥（使用当前 Cookie）
+     */
+    private function getWbiKeys() {
+        if (time() - $this->last_wbi_fetch_time < 3600 && $this->img_key !== '' && $this->sub_key !== '') {
+            return [$this->img_key, $this->sub_key];
+        }
+
+        $savedHeaders = $this->headers;
+        $cookie = $this->getBilibiliCookie();
+        if ($cookie) {
+            $this->headers = [
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer: https://www.bilibili.com/',
+                'Cookie: ' . $this->ensureCookieWithBuvid($cookie),
+            ];
+        }
+
+        $result = $this->httpGet('https://api.bilibili.com/x/web-interface/nav');
+        $this->headers = $savedHeaders;
+
+        if (!is_array($result) || ($result['code'] ?? -1) !== 0 || empty($result['data']['wbi_img'])) {
+            return ['', ''];
+        }
+
+        $img_url = $result['data']['wbi_img']['img_url'];
+        $sub_url = $result['data']['wbi_img']['sub_url'];
+        $this->img_key = explode('.', basename($img_url))[0];
+        $this->sub_key = explode('.', basename($sub_url))[0];
+        $this->last_wbi_fetch_time = time();
+
+        return [$this->img_key, $this->sub_key];
+    }
+
+    /**
+     * WBI 参数签名
+     */
+    private function signWbiParams(array $params) {
+        list($img_key, $sub_key) = $this->getWbiKeys();
+        if ($img_key === '' || $sub_key === '') {
+            return $params;
+        }
+
+        $mixin_key = $this->getMixinKey($img_key . $sub_key);
+        $params['wts'] = time();
+        ksort($params);
+        foreach ($params as $key => $value) {
+            $params[$key] = preg_replace('/[!\'()*]/', '', (string) $value);
+        }
+        $params['w_rid'] = md5(http_build_query($params) . $mixin_key);
+        return $params;
+    }
+
+    /**
+     * B 站 -352 风控所需参数
+     */
+    private function getAntiRiskParams() {
+        return [
+            'platform' => 'web',
+            'web_location' => '333.1387',
+            'dm_img_list' => '[{"x":6289,"y":-1428,"z":0,"timestamp":40,"type":0}]',
+            'dm_img_str' => 'V2ViR0wgMS',
+            'dm_cover_img_str' => 'QU1ESV9GeF9IRTU1MngDTUVD',
+        ];
     }
     
     /**
@@ -145,6 +269,27 @@ class BilibiliDynamic {
     }
     
     /**
+     * 构建 polymer feed 请求参数（仅用 offset 翻页，不传 page/page_size）
+     *
+     * @param int $mid 用户ID
+     * @param string $offset 分页游标，首页传空字符串
+     * @return array
+     */
+    private function buildFeedRequestParams($mid, $offset = '') {
+        $params = array_merge([
+            'host_mid' => $mid,
+            'features' => 'itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,forwardListHidden,decorationCard,commentsNewVersion,onlyfansAssetsV2,ugcDelete,onlyfansQaCard',
+            'timezone_offset' => -480,
+        ], $this->getAntiRiskParams());
+
+        if ($offset !== '' && $offset !== null) {
+            $params['offset'] = (string) $offset;
+        }
+
+        return $this->signWbiParams($params);
+    }
+
+    /**
      * 通过 feed/all 接口获取用户动态（feed/space 已被风控拦截）
      *
      * @param int $mid 用户ID
@@ -159,17 +304,7 @@ class BilibiliDynamic {
         $result = null;
         
         while ($current_page <= $page) {
-            $params = [
-                'host_mid' => $mid,
-                'offset' => $offset,
-                'page' => $current_page,
-                'features' => 'itemOpusStyle',
-                'timezone_offset' => -480,
-            ];
-            
-            if ($page_size > 0) {
-                $params['page_size'] = min($page_size, 30);
-            }
+            $params = $this->buildFeedRequestParams($mid, $offset);
             
             $this->applyRequestHeaders($mid);
             $result = $this->httpGet($api_url, $params);
@@ -186,7 +321,11 @@ class BilibiliDynamic {
                 return null;
             }
             
-            $offset = $result['data']['offset'] ?? '';
+            $next_offset = $result['data']['offset'] ?? '';
+            if ($next_offset === '' || $next_offset === $offset) {
+                return null;
+            }
+            $offset = $next_offset;
             $current_page++;
         }
         
@@ -196,7 +335,7 @@ class BilibiliDynamic {
         
         $item_count = count($result['data']['items']);
         $result['data']['page'] = [
-            'total' => empty($result['data']['has_more']) ? $item_count : max($item_count, $page * $page_size)
+            'total' => empty($result['data']['has_more']) ? $item_count : max($item_count, $page * max($page_size, 1))
         ];
         
         return $result;
@@ -227,11 +366,15 @@ class BilibiliDynamic {
      * @return array|null
      */
     private function fetchFeedSpaceAccumulated($mid, $target_count) {
-        return $this->fetchFeedAccumulated(
-            'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space',
-            $mid,
-            $target_count
-        );
+        $desktop_url = 'https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/space';
+        $legacy_url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space';
+
+        $result = $this->fetchFeedAccumulated($desktop_url, $mid, $target_count);
+        if ($this->isValidDynamicResponse($result) && count($result['data']['items']) >= min($target_count, 1)) {
+            return $result;
+        }
+
+        return $this->fetchFeedAccumulated($legacy_url, $mid, $target_count);
     }
 
     /**
@@ -256,26 +399,30 @@ class BilibiliDynamic {
         }
 
         $offset = '';
-        $page_num = 1;
         $base_result = null;
         $has_more = false;
+        $max_pages = 10;
 
-        for ($i = 0; $i < 5 && count($all_items) < $target_count; $i++) {
-            $remaining = $target_count - count($all_items);
-            $params = [
-                'host_mid' => $mid,
-                'offset' => $offset,
-                'page' => $page_num,
-                'features' => 'itemOpusStyle',
-                'timezone_offset' => -480,
-                'page_size' => min($remaining, 30),
-            ];
+        for ($i = 0; $i < $max_pages && count($all_items) < $target_count; $i++) {
+            if ($i > 0) {
+                usleep(250000);
+            }
+
+            $params = $this->buildFeedRequestParams($mid, $offset);
 
             $this->applyRequestHeaders($mid);
             $result = $this->httpGet($api_url, $params);
 
             if (!is_array($result) || ($result['code'] ?? -1) !== 0 || !isset($result['data']['items']) || !is_array($result['data']['items'])) {
-                break;
+                if ($i === 0 && empty($all_items)) {
+                    break;
+                }
+                usleep(300000);
+                $this->applyRequestHeaders($mid);
+                $result = $this->httpGet($api_url, $params);
+                if (!is_array($result) || ($result['code'] ?? -1) !== 0 || !isset($result['data']['items']) || !is_array($result['data']['items'])) {
+                    break;
+                }
             }
 
             if (empty($result['data']['items'])) {
@@ -286,11 +433,13 @@ class BilibiliDynamic {
                 $base_result = $result;
             }
 
+            $added = 0;
             foreach ($result['data']['items'] as $item) {
                 $id = $item['id_str'] ?? '';
                 if ($id !== '' && !isset($seen[$id])) {
                     $seen[$id] = true;
                     $all_items[] = $item;
+                    $added++;
                 }
             }
 
@@ -299,8 +448,11 @@ class BilibiliDynamic {
                 break;
             }
 
-            $offset = $result['data']['offset'] ?? '';
-            $page_num++;
+            $next_offset = $result['data']['offset'] ?? '';
+            if ($next_offset === '' || $next_offset === $offset) {
+                break;
+            }
+            $offset = $next_offset;
         }
 
         if (empty($all_items)) {
@@ -331,21 +483,47 @@ class BilibiliDynamic {
      * @return array|null
      */
     private function fetchFeedSpacePage($mid, $page, $page_size) {
-        $api_url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space';
-        $params = [
-            'host_mid' => $mid,
-            'offset' => '',
-            'page' => max(1, (int) $page),
-            'features' => 'itemOpusStyle',
-            'timezone_offset' => -480,
+        $api_urls = [
+            'https://api.bilibili.com/x/polymer/web-dynamic/desktop/v1/feed/space',
+            'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space',
         ];
+        $offset = '';
 
-        if ($page_size > 0) {
-            $params['page_size'] = min($page_size, 30);
+        if ($page > 1) {
+            for ($current = 1; $current < $page; $current++) {
+                $step = null;
+                foreach ($api_urls as $api_url) {
+                    $params = $this->buildFeedRequestParams($mid, $offset);
+                    $this->applyRequestHeaders($mid);
+                    $step = $this->httpGet($api_url, $params);
+                    if ($this->isValidDynamicResponse($step) && !empty($step['data']['has_more'])) {
+                        break;
+                    }
+                    $step = null;
+                }
+
+                if (!$this->isValidDynamicResponse($step) || empty($step['data']['has_more'])) {
+                    return null;
+                }
+
+                $next_offset = $step['data']['offset'] ?? '';
+                if ($next_offset === '' || $next_offset === $offset) {
+                    return null;
+                }
+                $offset = $next_offset;
+            }
         }
 
-        $this->applyRequestHeaders($mid);
-        $result = $this->httpGet($api_url, $params);
+        $result = null;
+        foreach ($api_urls as $api_url) {
+            $params = $this->buildFeedRequestParams($mid, $offset);
+            $this->applyRequestHeaders($mid);
+            $result = $this->httpGet($api_url, $params);
+            if ($this->isValidDynamicResponse($result)) {
+                break;
+            }
+            $result = null;
+        }
 
         if (!$this->isValidDynamicResponse($result)) {
             return null;
@@ -411,6 +589,7 @@ class BilibiliDynamic {
      * @return string 排序后的 URL 列表，逗号分隔
      */
     private function extractRawItemImageUrls($item) {
+        $item = $this->normalizeDynamicItem($item);
         $urls = [];
         $major = $item['modules']['module_dynamic']['major'] ?? [];
 
@@ -463,6 +642,7 @@ class BilibiliDynamic {
         
         $parts = [];
         foreach ($data['data']['items'] as $item) {
+            $item = $this->normalizeDynamicItem($item);
             $parts[] = ($item['id_str'] ?? '')
                 . ':'
                 . ($item['modules']['module_author']['pub_ts'] ?? 0)
@@ -556,13 +736,28 @@ class BilibiliDynamic {
             $this->logApiCall("[CACHE MISS]", $mid, $page);
         }
         
-        // 有 Cookie 时优先 feed/space（含置顶与图文原图）；否则或失败时回退 feed/all
+        // 有 Cookie 时优先 feed/space（含置顶与图文原图）；不足时用 feed/all 补齐；否则回退 feed/all
         try {
             $result = null;
 
             if ($this->hasBilibiliCookie()) {
-                $result = $this->fetchFeedSpaceAccumulated($mid, $page_size);
-                if ($this->isValidDynamicResponse($result)) {
+                $spaceResult = $this->fetchFeedSpaceAccumulated($mid, $page_size);
+                if ($this->isValidDynamicResponse($spaceResult)) {
+                    $result = $spaceResult;
+                    $spaceCount = count($spaceResult['data']['items']);
+
+                    if ($spaceCount < $page_size) {
+                        $merged = $this->fetchFeedAllAccumulated(
+                            $mid,
+                            $page_size,
+                            $spaceResult['data']['items']
+                        );
+                        if ($this->isValidDynamicResponse($merged) && count($merged['data']['items']) > $spaceCount) {
+                            $result = $merged;
+                            $this->logApiCall("[MERGED space+all] count:" . count($merged['data']['items']), $mid, $page);
+                        }
+                    }
+
                     $this->saveApiResponse($result, $mid, $page);
                     $this->logApiCall("[CACHE WRITE space]", $mid, $page);
                     return $result;
@@ -619,12 +814,124 @@ class BilibiliDynamic {
     }
     
     /**
+     * 是否为 desktop feed 的 modules 数组格式
+     */
+    private function isDesktopModulesFormat(array $modules): bool {
+        if (empty($modules)) {
+            return false;
+        }
+        if (isset($modules['module_author']) || isset($modules['module_dynamic'])) {
+            return false;
+        }
+        return isset($modules[0]['module_type']);
+    }
+
+    /**
+     * 将 desktop/v1/feed 的动态项转为 legacy modules 对象结构
+     */
+    private function normalizeDynamicItem(array $item): array {
+        if (!isset($item['modules']) || !is_array($item['modules']) || !$this->isDesktopModulesFormat($item['modules'])) {
+            return $item;
+        }
+
+        $modules = [];
+        foreach ($item['modules'] as $mod) {
+            $type = $mod['module_type'] ?? '';
+            switch ($type) {
+                case 'MODULE_TYPE_AUTHOR':
+                    $modules['module_author'] = $mod['module_author'] ?? [];
+                    break;
+                case 'MODULE_TYPE_TAG':
+                    $modules['module_tag'] = $mod['module_tag'] ?? [];
+                    break;
+                case 'MODULE_TYPE_DESC':
+                    if (!isset($modules['module_dynamic'])) {
+                        $modules['module_dynamic'] = [];
+                    }
+                    $modules['module_dynamic']['desc'] = [
+                        'rich_text_nodes' => $mod['module_desc']['rich_text_nodes'] ?? [],
+                        'text' => $mod['module_desc']['text'] ?? '',
+                    ];
+                    break;
+                case 'MODULE_TYPE_DYNAMIC':
+                    $major = $this->convertDesktopMajor($mod['module_dynamic'] ?? []);
+                    if (!isset($modules['module_dynamic'])) {
+                        $modules['module_dynamic'] = [];
+                    }
+                    if (!empty($major)) {
+                        $modules['module_dynamic']['major'] = $major;
+                    }
+                    break;
+            }
+        }
+
+        $item['modules'] = $modules;
+        return $item;
+    }
+
+    /**
+     * desktop module_dynamic 转为 legacy major 结构
+     */
+    private function convertDesktopMajor(array $dyn): array {
+        $major = [];
+
+        if (!empty($dyn['dyn_draw'])) {
+            $draw = $dyn['dyn_draw'];
+            $major['type'] = 'MAJOR_TYPE_DRAW';
+            $major['draw'] = [
+                'id' => $draw['id'] ?? '',
+                'items' => $draw['items'] ?? [],
+            ];
+            if (!empty($draw['pics'])) {
+                $major['draw']['pics'] = $draw['pics'];
+            }
+        }
+
+        if (!empty($dyn['dyn_archive'])) {
+            $arch = $dyn['dyn_archive'];
+            $major['type'] = 'MAJOR_TYPE_ARCHIVE';
+            $major['archive'] = [
+                'aid' => $arch['aid'] ?? '',
+                'bvid' => $arch['bvid'] ?? '',
+                'title' => $arch['title'] ?? '',
+                'cover' => $arch['cover'] ?? '',
+                'duration_text' => $arch['duration_text'] ?? '',
+                'desc' => $arch['desc'] ?? '',
+                'stat' => $arch['stat'] ?? [],
+            ];
+        }
+
+        if (!empty($dyn['dyn_forward']['item'])) {
+            $major['type'] = 'MAJOR_TYPE_FORWARD';
+            $major['forward'] = [
+                'item' => $this->normalizeDynamicItem($dyn['dyn_forward']['item']),
+            ];
+        }
+
+        if (!empty($dyn['dyn_opus'])) {
+            $opus = $dyn['dyn_opus'];
+            $major['type'] = 'MAJOR_TYPE_OPUS';
+            $major['opus'] = $opus;
+            if (!empty($opus['summary']['rich_text_nodes'])) {
+                $major['opus']['summary'] = $opus['summary'];
+            }
+            if (!empty($opus['pics'])) {
+                $major['opus']['pics'] = $opus['pics'];
+            }
+        }
+
+        return $major;
+    }
+
+    /**
      * 处理动态内容
      * 
      * @param array $dynamic 动态数据
      * @return array 处理后的动态数据
      */
     public function processDynamic($dynamic) {
+        $dynamic = $this->normalizeDynamicItem($dynamic);
+
         $processed = [
             'id' => $dynamic['id_str'] ?? '',
             'type' => $dynamic['type'] ?? '',
@@ -634,12 +941,16 @@ class BilibiliDynamic {
             'images' => [],
             'video' => null,
             'card' => null,
+            'forward_origin' => null,
             'is_pinned' => false,
             'is_forward' => false
         ];
         
         // 检查是否为置顶动态
         if (isset($dynamic['modules']['module_tag']['text']) && $dynamic['modules']['module_tag']['text'] === '置顶') {
+            $processed['is_pinned'] = true;
+        }
+        if (!empty($dynamic['modules']['module_author']['is_top'])) {
             $processed['is_pinned'] = true;
         }
         
@@ -676,6 +987,11 @@ class BilibiliDynamic {
         // 4. 检查卡片描述
         if (empty($content) && isset($dynamic['modules']['module_dynamic']['major']['draw']['desc'])) {
             $content = $dynamic['modules']['module_dynamic']['major']['draw']['desc'];
+        }
+
+        // 5. 纯文本 desc 兜底
+        if (empty($content) && !empty($dynamic['modules']['module_dynamic']['desc']['text'])) {
+            $content = nl2br(htmlspecialchars($dynamic['modules']['module_dynamic']['desc']['text'], ENT_QUOTES, 'UTF-8'));
         }
         
         $processed['content'] = $content;
@@ -734,14 +1050,28 @@ class BilibiliDynamic {
             ];
         }
         
-        // 处理卡片
+        // 处理卡片（图文 draw 仅有 items 时不生成空 card，避免渲染空白条）
         if (isset($dynamic['modules']['module_dynamic']['major']['draw'])) {
             $draw = $dynamic['modules']['module_dynamic']['major']['draw'];
-            $processed['card'] = [
+            $card = [
                 'id' => $draw['id'] ?? '',
                 'title' => $draw['title'] ?? '',
                 'desc' => $draw['desc'] ?? '',
                 'pics' => $this->extractImages($draw['pics'] ?? [])
+            ];
+            if ($card['title'] !== '' || $card['desc'] !== '' || !empty($card['pics'])) {
+                $processed['card'] = $card;
+            }
+        }
+
+        // 转发动态：外层 content 为转发语，原文与媒体放入 forward_origin
+        if ($processed['is_forward'] && !empty($dynamic['modules']['module_dynamic']['major']['forward']['item'])) {
+            $inner = $this->processDynamic($dynamic['modules']['module_dynamic']['major']['forward']['item']);
+            $processed['forward_origin'] = [
+                'content' => $inner['content'] ?? '',
+                'images' => $inner['images'] ?? [],
+                'video' => $inner['video'] ?? null,
+                'card' => $inner['card'] ?? null,
             ];
         }
         
@@ -873,8 +1203,10 @@ class BilibiliDynamic {
         }
 
         foreach ($result['data']['items'] as $item) {
-            $tag = $item['modules']['module_tag']['text'] ?? '';
-            if ($tag !== '置顶') {
+            $normalized = $this->normalizeDynamicItem($item);
+            $tag = $normalized['modules']['module_tag']['text'] ?? '';
+            $is_top = !empty($normalized['modules']['module_author']['is_top']);
+            if ($tag !== '置顶' && !$is_top) {
                 continue;
             }
 
@@ -901,10 +1233,10 @@ class BilibiliDynamic {
     public function getProcessedDynamics($mid, $page = 1, $page_size = 30, $force_refresh = false, $exclude_pinned = false) {
         $start_time = microtime(true);
         $dynamics = [];
-        $raw_fetch_size = $page_size + ($exclude_pinned ? 6 : 0);
+        $raw_fetch_size = $page_size + ($exclude_pinned ? 10 : 0);
 
         for ($attempt = 0; $attempt < 4 && count($dynamics) < $page_size; $attempt++) {
-            $current_fetch = min($raw_fetch_size + ($attempt * 12), 60);
+            $current_fetch = min($raw_fetch_size + ($attempt * 15), 80);
             $should_force = $force_refresh || $attempt > 0;
             $result = $this->getUserDynamics($mid, $page, $current_fetch, $should_force);
 

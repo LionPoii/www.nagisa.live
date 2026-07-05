@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 /**
  * 哔哩哔哩同人图API接口
  * 提供同人图数据获取和缓存功能
@@ -8,9 +9,6 @@ header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Cache-Control: post-check=0, pre-check=0', false);
-header('Pragma: no-cache');
 
 // 处理OPTIONS请求
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

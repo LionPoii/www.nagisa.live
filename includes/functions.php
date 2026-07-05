@@ -120,6 +120,7 @@ function log_error($message, $context = []) {
  */
 function send_json_response($data, $status_code = 200) {
     http_response_code($status_code);
+    require_once __DIR__ . '/api_no_cache_headers.php';
     header('Content-Type: application/json');
     echo json_encode($data);
     exit;

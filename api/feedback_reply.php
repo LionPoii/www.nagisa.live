@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 header('Content-Type: application/json; charset=utf-8');
 require_once '../includes/database.php';
 require_once '../includes/auth.php';

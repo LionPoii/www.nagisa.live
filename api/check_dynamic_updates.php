@@ -1,12 +1,10 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 // 设置安全响应头
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('X-XSS-Protection: 1; mode=block');
 header('Content-Type: application/json');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Pragma: no-cache');
-header('Expires: 0');
 
 // 关闭错误显示，避免错误信息混入JSON输出
 ini_set('display_errors', 0);

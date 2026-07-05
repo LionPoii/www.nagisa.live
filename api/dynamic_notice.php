@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/api_no_cache_headers.php';
 /**
  * 动态API
  * 返回用户的B站动态列表
@@ -7,7 +8,6 @@
 // 设置响应头
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-header('Cache-Control: no-cache, no-store, must-revalidate');
 
 // 引入动态获取类
 require_once __DIR__ . '/../includes/bilibili_dynamic.php';

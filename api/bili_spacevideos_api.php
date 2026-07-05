@@ -477,6 +477,7 @@ function cache_api_data($key, $data) {
 
 // 使用示例
 if (isset($_GET['mid']) && is_numeric($_GET['mid'])) {
+    require_once __DIR__ . '/../includes/api_no_cache_headers.php';
     $mid = intval($_GET['mid']);
     $action = isset($_GET['action']) ? $_GET['action'] : 'videos';
     

@@ -2,7 +2,6 @@
 html, body {
     margin: 0;
     padding: 0;
-    background: #222;
     overflow: hidden; 
 }
 
@@ -18,7 +17,6 @@ a[href]:hover::after {
 }
 
 .section-content {
-    color: white;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
     padding: 60px 0;
     text-align: center;

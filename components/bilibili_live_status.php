@@ -501,18 +501,25 @@ function setupLiveStatusChecker() {
         // 创建一个新的XMLHttpRequest对象
         const xhr = new XMLHttpRequest();
         
-        // 使用共享API检查直播状态
-        const url = '/api/check_live_status.php?_=' + new Date().getTime();
+        // 使用 live_status_notice（CDN 不缓存）；兼容 is_living 字段
+        const url = '/api/live_status_notice.php?_=' + new Date().getTime();
         
         // 配置请求
         xhr.open('GET', url, true);
         xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         
         // 处理响应
         xhr.onload = function() {
             if (xhr.status >= 200 && xhr.status < 300) {
                 try {
-                    const response = JSON.parse(xhr.responseText);
+                    const raw = JSON.parse(xhr.responseText);
+                    const response = typeof raw.is_living !== 'undefined' ? raw : {
+                        is_living: raw.live_status === 1,
+                        title: raw.title || '直播中',
+                        room_id: raw.room_id,
+                        cover_url: raw.cover || raw.keyframe || raw.background || ''
+                    };
                     const statusChanged = response.is_living !== currentStatus.is_living
                         || response.title !== currentStatus.title;
                     
